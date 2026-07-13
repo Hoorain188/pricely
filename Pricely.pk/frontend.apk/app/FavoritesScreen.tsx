@@ -1,25 +1,26 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme/colors';
+import { Heart } from 'lucide-react-native';
+import { colors, fonts } from '../theme/colors';
 import ScreenWrapper from '../components/ScreenWrapper';
 
-const HomeScreen: React.FC = () => {
+export default function FavoritesScreen() {
   return (
     <ScreenWrapper style={styles.wrapper}>
       <View style={styles.container}>
-        <Ionicons name="home" size={48} color={colors.accentSolid} />
-        <Text style={styles.title}>Home</Text>
-        <Text style={styles.subtitle}>Best deals will appear here</Text>
+        <Heart size={48} color={colors.accentSolid} />
+        <Text style={styles.title}>Favorites</Text>
+        <Text style={styles.subtitle}>Your favorited items will appear here</Text>
       </View>
     </ScreenWrapper>
   );
-};
+}
 
 const styles = StyleSheet.create({
   wrapper: {
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: colors.background,
   },
   container: {
     alignItems: 'center',
@@ -28,12 +29,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '700',
+    fontFamily: fonts.headline,
     color: colors.textPrimary,
   },
   subtitle: {
     fontSize: 14,
+    fontFamily: fonts.body,
     color: colors.textSecondary,
   },
 });
-
-export default HomeScreen;

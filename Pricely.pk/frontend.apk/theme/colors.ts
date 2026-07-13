@@ -45,6 +45,14 @@ export const colors = {
 
   danger: '#C0392B',
   success: '#0E6B4F',
+
+  // Admin console (dark hero variant) — reuses textPrimary as the dark
+  // background so there's still only one place these colors are defined.
+  onDarkPrimary: '#FFFFFF',
+  onDarkSecondary: 'rgba(255,255,255,0.68)',
+  adminAccent: '#155EEF', // blue stop from gradients.duo — used for 2FA code boxes, active category pill
+  accentBlueTint: '#E7EEFC', // light blue background for the active category pill
+  iconOnMango: '#3D2606', // dark icon color on mango-gradient surfaces, per kit §07
 };
 
 // §04 — radius & elevation scale. Don't invent new radius values;

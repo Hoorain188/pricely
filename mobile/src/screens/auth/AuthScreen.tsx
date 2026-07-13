@@ -1,0 +1,1 @@
+// Deprecated: Moved to src/app/AuthScreen.tsx

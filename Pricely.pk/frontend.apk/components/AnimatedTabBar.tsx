@@ -20,29 +20,32 @@ export default function AnimatedTabBar({ state, descriptors, navigation }: Botto
 
   return (
     <View style={[styles.menu, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-      {state.routes.map((route, index) => {
-        const { options } = descriptors[route.key];
-        const isFocused = state.index === index;
-        const Icon = ICONS[route.name] ?? House;
-        const label = (options.tabBarLabel as string) ?? options.title ?? route.name;
+      {state.routes
+        .map((route, idx) => ({ route, originalIndex: idx }))
+        .filter(({ route }) => route.name !== 'Category')
+        .map(({ route, originalIndex }) => {
+          const { options } = descriptors[route.key];
+          const isFocused = state.index === originalIndex;
+          const Icon = ICONS[route.name] ?? House;
+          const label = (options.tabBarLabel as string) ?? options.title ?? route.name;
 
-        const onPress = () => {
-          const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-          if (!isFocused && !event.defaultPrevented) {
-            navigation.navigate(route.name);
-          }
-        };
+          const onPress = () => {
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
 
-        return (
-          <TabItem
-            key={route.key}
-            label={label}
-            Icon={Icon}
-            isActive={isFocused}
-            onPress={onPress}
-          />
-        );
-      })}
+          return (
+            <TabItem
+              key={route.key}
+              label={label}
+              Icon={Icon}
+              isActive={isFocused}
+              onPress={onPress}
+            />
+          );
+        })}
     </View>
   );
 }

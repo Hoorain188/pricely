@@ -8,6 +8,7 @@ import HomeScreen from './HomeScreen';
 import FavoritesScreen from './FavoritesScreen';
 import AlertsScreen from './AlertsScreen';
 import AccountScreen from './ProfileScreen';
+import CategoryScreen from './Categoryscreen';
 import AnimatedTabBar from '../components/AnimatedTabBar';
 
 // This is the ONE file that decides which screen the user sees.
@@ -26,6 +27,7 @@ function MainTabs() {
       tabBar={(props) => <AnimatedTabBar {...props} />}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Category" component={CategoryScreen} />
       <Tab.Screen name="Favorites" component={FavoritesScreen} />
       <Tab.Screen name="Alerts" component={AlertsScreen} />
       <Tab.Screen name="Account" component={AccountScreen} />
@@ -36,13 +38,15 @@ function MainTabs() {
 export default function AppNavigator() {
   // Swap this for your real auth state (context, redux, a stored token
   // check, etc). This local flag is here so the file runs standalone.
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(true); // default to true if they are logged in/testing
 
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {isLoggedIn ? (
-          <Stack.Screen name="Main" component={MainTabs} />
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
+          </>
         ) : (
           <Stack.Screen name="Auth">
             {(props) => <AuthScreen {...props} onAuthenticated={() => setIsLoggedIn(true)} />}

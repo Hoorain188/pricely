@@ -90,8 +90,8 @@ export default function FloatingLabelInput({
     animate(borderAnim, 0);
   };
 
-  const labelTop = labelAnim.interpolate({ inputRange: [0, 1], outputRange: [17, 6] });
-  const labelSize = labelAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] });
+  const labelTop = labelAnim.interpolate({ inputRange: [0, 1], outputRange: [17, 3] });
+  const labelSize = labelAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 11] });
   const labelColor = labelAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [colors.textSecondary, colors.accentSolid],
@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontWeight: '500',
     color: colors.textPrimary,
-    paddingTop: 17,
+    paddingTop: 20,
     height: 58,
   },
   inputError: { color: colors.danger },

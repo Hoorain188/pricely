@@ -5,9 +5,9 @@ import { useFonts } from 'expo-font';
 import { Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { Fraunces_600SemiBold } from '@expo-google-fonts/fraunces';
 import { IBMPlexMono_600SemiBold, IBMPlexMono_700Bold } from '@expo-google-fonts/ibm-plex-mono';
-import AppNavigator from './src/app/AppNavigator';
-import { useAuthStore } from './src/context/AuthContext';
-import { colors } from './src/theme/colors';
+import AppNavigator from './frontend.apk/app/AppNavigator';
+import { useAuthStore } from './frontend.apk/context/AuthContext';
+import { colors } from './frontend.apk/theme/colors';
 
 export default function App() {
   const { isLoading, loadStoredAuth } = useAuthStore();

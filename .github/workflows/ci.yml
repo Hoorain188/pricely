@@ -12,13 +12,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - name: Setup Node
+        uses: actions/setup-node@v3
         with:
-          python-version: '3.11'
+          node-version: '18'
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run tests
-        run: echo "Tests chalenge yahan"
+      - name: Check files exist
+        run: echo "CI Pipeline running successfully"

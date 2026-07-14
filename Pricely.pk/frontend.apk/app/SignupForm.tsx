@@ -33,7 +33,7 @@ function Reveal({ anim, children, style }: RevealProps) {
 interface SignupFormProps {
   role?: string;
   onSwitchToLogin: () => void;
-  onAuthenticated?: () => void;
+  onSignedUp: (email: string) => void;
 }
 
 export interface SignupFormRef {
@@ -42,7 +42,7 @@ export interface SignupFormRef {
 }
 
 const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupForm(
-  { role, onSwitchToLogin, onAuthenticated },
+  { role, onSwitchToLogin, onSignedUp },
   ref
 ) {
   const anims = useRef([...Array(STEPS)].map(() => new Animated.Value(0))).current;
@@ -93,7 +93,9 @@ const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupFor
   const handleSignup = async () => {
     if (!validate()) return;
     await setAuth({ id: '1', name, email }, 'mock-jwt-token');
-    onAuthenticated?.();
+    // Account exists locally now, but isn't considered fully authenticated
+    // until the email code is verified — AuthScreen routes to VerifyCodeForm next.
+    onSignedUp(email.trim());
   };
 
   return (

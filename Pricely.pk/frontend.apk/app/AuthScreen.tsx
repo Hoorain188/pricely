@@ -3,6 +3,8 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet, KeyboardAvoidingV
 import { LucideIcon, Shield, User } from 'lucide-react-native';
 import LoginForm, { LoginFormRef } from './LoginForm';
 import SignupForm, { SignupFormRef } from './SignupForm';
+import ForgotPasswordForm, { ForgotPasswordFormRef } from './ForgotPasswordForm';
+import VerifyCodeForm, { VerifyCodeFormRef } from './VerifyCodeForm';
 import BrandMark from '../components/BrandMark';
 import { colors, radii, fonts } from '../theme/colors';
 
@@ -13,6 +15,7 @@ interface AuthScreenProps {
 }
 
 type Role = 'admin' | 'user';
+type Mode = 'login' | 'signup' | 'forgot' | 'verify';
 
 const ROLES: { key: Role; title: string; subtitle: string; icon: LucideIcon }[] = [
   { key: 'admin', title: 'ADMIN', subtitle: 'Manage store data', icon: Shield },
@@ -20,19 +23,26 @@ const ROLES: { key: Role; title: string; subtitle: string; icon: LucideIcon }[] 
 ];
 
 export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [mode, setMode] = useState<Mode>('login');
   const [role, setRole] = useState<Role>('user');
+  const [verifyEmail, setVerifyEmail] = useState('');
+  // Tracks which flow sent the user to the verify screen, so it knows
+  // whether to finish signup or drop back into the password-reset flow.
+  const [verifyFlow, setVerifyFlow] = useState<'signup' | 'reset'>('reset');
   const loginRef = useRef<LoginFormRef>(null);
   const signupRef = useRef<SignupFormRef>(null);
+  const forgotRef = useRef<ForgotPasswordFormRef>(null);
+  const verifyRef = useRef<VerifyCodeFormRef>(null);
 
-  const goTo = (target: 'login' | 'signup') => {
-    const leavingRef = mode === 'login' ? loginRef : signupRef;
-    leavingRef.current?.playOut(() => setMode(target));
+  const refFor = (m: Mode) =>
+    m === 'login' ? loginRef : m === 'signup' ? signupRef : m === 'forgot' ? forgotRef : verifyRef;
+
+  const goTo = (target: Mode) => {
+    refFor(mode).current?.playOut(() => setMode(target));
   };
 
   useEffect(() => {
-    const enteringRef = mode === 'login' ? loginRef : signupRef;
-    const t = setTimeout(() => enteringRef.current?.playIn(), 30);
+    const t = setTimeout(() => refFor(mode).current?.playIn(), 30);
     return () => clearTimeout(t);
   }, [mode]);
 
@@ -47,32 +57,74 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           {/* Role selector sits between the Pricely logo and the
               "Welcome back" / "Create your account" heading, matching the
               reference layout — persists across the login/signup swap so
-              it doesn't reset when switching forms. */}
-          <View style={styles.roleRow}>
-            {ROLES.map(({ key, title, subtitle, icon }) => {
-              const active = role === key;
-              const Icon = icon;
-              return (
-                <TouchableOpacity
-                  key={key}
-                  style={[styles.roleTab, active && styles.roleTabActive]}
-                  onPress={() => setRole(key)}
-                  activeOpacity={0.85}
-                >
-                  <Icon size={16} color={active ? colors.accentSolid : colors.textTertiary} />
-                  <View style={styles.roleTextCol}>
-                    <Text style={[styles.roleTitle, active && styles.roleTitleActive]}>{title}</Text>
-                    <Text style={styles.roleSubtitle}>{subtitle}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+              it doesn't reset when switching forms. Hidden for the
+              forgot-password/verify flow, which isn't role-specific. */}
+          {(mode === 'login' || mode === 'signup') && (
+            <View style={styles.roleRow}>
+              {ROLES.map(({ key, title, subtitle, icon }) => {
+                const active = role === key;
+                const Icon = icon;
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    style={[styles.roleTab, active && styles.roleTabActive]}
+                    onPress={() => setRole(key)}
+                    activeOpacity={0.85}
+                  >
+                    <Icon size={16} color={active ? colors.accentSolid : colors.textTertiary} />
+                    <View style={styles.roleTextCol}>
+                      <Text style={[styles.roleTitle, active && styles.roleTitleActive]}>{title}</Text>
+                      <Text style={styles.roleSubtitle}>{subtitle}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
 
-          {mode === 'login' ? (
-            <LoginForm ref={loginRef} role={role} onSwitchToSignup={() => goTo('signup')} onAuthenticated={onAuthenticated} />
-          ) : (
-            <SignupForm ref={signupRef} role={role} onSwitchToLogin={() => goTo('login')} onAuthenticated={onAuthenticated} />
+          {mode === 'login' && (
+            <LoginForm
+              ref={loginRef}
+              role={role}
+              onSwitchToSignup={() => goTo('signup')}
+              onForgotPassword={() => goTo('forgot')}
+              onAuthenticated={onAuthenticated}
+            />
+          )}
+          {mode === 'signup' && (
+            <SignupForm
+              ref={signupRef}
+              role={role}
+              onSwitchToLogin={() => goTo('login')}
+              onSignedUp={(email) => {
+                setVerifyEmail(email);
+                setVerifyFlow('signup');
+                goTo('verify');
+              }}
+            />
+          )}
+          {mode === 'forgot' && (
+            <ForgotPasswordForm
+              ref={forgotRef}
+              onBack={() => goTo('login')}
+              onSwitchToLogin={() => goTo('login')}
+              onCodeSent={(email) => {
+                setVerifyEmail(email);
+                setVerifyFlow('reset');
+                goTo('verify');
+              }}
+            />
+          )}
+          {mode === 'verify' && (
+            <VerifyCodeForm
+              ref={verifyRef}
+              email={verifyEmail}
+              onBack={() => goTo(verifyFlow === 'signup' ? 'signup' : 'forgot')}
+              onVerified={() => (verifyFlow === 'signup' ? onAuthenticated?.() : goTo('login'))}
+              onResend={() => {
+                // TODO: call your resend-code API here
+              }}
+            />
           )}
         </ScrollView>
       </KeyboardAvoidingView>

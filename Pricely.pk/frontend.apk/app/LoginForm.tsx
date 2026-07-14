@@ -35,11 +35,12 @@ export interface LoginFormRef {
 interface LoginFormProps {
   role?: string;
   onSwitchToSignup: () => void;
+  onForgotPassword?: () => void;
   onAuthenticated?: () => void;
 }
 
 const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(function LoginForm(
-  { role, onSwitchToSignup, onAuthenticated },
+  { role, onSwitchToSignup, onForgotPassword, onAuthenticated },
   ref
 ) {
   const anims = useRef([...Array(STEPS)].map(() => new Animated.Value(0))).current;
@@ -122,7 +123,7 @@ const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(function LoginForm(
           error={errors.password}
         />
         <View style={styles.forgotRow}>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={onForgotPassword}>
             <Text style={styles.link}>Forgot password?</Text>
           </TouchableOpacity>
         </View>

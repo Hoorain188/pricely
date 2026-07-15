@@ -1,12 +1,10 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, Animated, StyleSheet, Easing, ViewStyle } from 'react-native';
-import { FontAwesome5 } from '@expo/vector-icons';
 import { Mail, Lock, User } from 'lucide-react-native';
 import FloatingLabelInput from '../components/FloatingLabelInput';
 import PressExpandButton from '../components/Pressexpandbutton';
 import AnimatedCheckbox from '../components/Animatedcheckbox';
 import { colors, fonts } from '../theme/colors';
-import { useAuthStore } from '../context/AuthContext';
 
 const STEPS = 7;
 
@@ -33,7 +31,7 @@ function Reveal({ anim, children, style }: RevealProps) {
 interface SignupFormProps {
   role?: string;
   onSwitchToLogin: () => void;
-  onSignedUp: (email: string) => void;
+  onSignedUp: (email: string, name: string) => void;
 }
 
 export interface SignupFormRef {
@@ -51,7 +49,6 @@ const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupFor
   const [password, setPassword] = useState('');
   const [agree, setAgree] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
-  const { setAuth } = useAuthStore();
 
   useImperativeHandle(ref, () => ({
     playIn: () => {
@@ -92,10 +89,8 @@ const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupFor
 
   const handleSignup = async () => {
     if (!validate()) return;
-    await setAuth({ id: '1', name, email }, 'mock-jwt-token');
-    // Account exists locally now, but isn't considered fully authenticated
-    // until the email code is verified — AuthScreen routes to VerifyCodeForm next.
-    onSignedUp(email.trim());
+    // The account is only fully authenticated after the OTP verification succeeds.
+    onSignedUp(email.trim(), name.trim());
   };
 
   return (
@@ -176,14 +171,7 @@ const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupFor
 
       <Reveal anim={anims[6]}>
         <View style={styles.socialRow}>
-          <TouchableOpacity style={styles.socialBtn}>
-            <FontAwesome5 name="google" size={15} color="#EA4335" />
-            <Text style={styles.socialLabel}>Google</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.socialBtn}>
-            <FontAwesome5 name="apple" size={17} color="#000" />
-            <Text style={styles.socialLabel}>Apple</Text>
-          </TouchableOpacity>
+          <Text style={styles.socialHint}>Social sign-up is coming soon.</Text>
         </View>
 
         <View style={styles.switchRow}>
@@ -209,20 +197,8 @@ const styles = StyleSheet.create({
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
   dividerText: { fontSize: 11, fontFamily: fonts.label, color: colors.textTertiary, letterSpacing: 0.5, marginHorizontal: 10 },
-  socialRow: { flexDirection: 'row', gap: 12, marginBottom: 24 },
-  socialBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    height: 50,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  socialLabel: { fontSize: 14, fontFamily: fonts.label, color: colors.textPrimary },
+  socialRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 24 },
+  socialHint: { fontSize: 13, fontFamily: fonts.body, color: colors.textSecondary },
   switchRow: { flexDirection: 'row', justifyContent: 'center' },
   switchText: { fontSize: 14, fontFamily: fonts.body, color: colors.textSecondary },
 

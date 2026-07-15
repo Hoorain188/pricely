@@ -42,8 +42,8 @@ interface VerifyCodeFormProps {
   email: string;
   expiresInSeconds?: number;
   onBack: () => void;
-  onVerified: (code: string) => void;
-  onResend: () => void;
+  onVerified: (code: string) => Promise<void>;
+  onResend: () => Promise<void>;
 }
 
 const VerifyCodeForm = forwardRef<VerifyCodeFormRef, VerifyCodeFormProps>(function VerifyCodeForm(
@@ -51,7 +51,7 @@ const VerifyCodeForm = forwardRef<VerifyCodeFormRef, VerifyCodeFormProps>(functi
   ref
 ) {
   const anims = useRef([...Array(STEPS)].map(() => new Animated.Value(0))).current;
-  const [code, setCode] = useState('');
+  const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(''));
   const [error, setError] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(expiresInSeconds);
@@ -86,46 +86,75 @@ const VerifyCodeForm = forwardRef<VerifyCodeFormRef, VerifyCodeFormProps>(functi
   const seconds = secondsLeft % 60;
   const timeLabel = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-  const digits = Array.from({ length: CODE_LENGTH }, (_, i) => code[i] ?? '');
-
   const setDigit = (index: number, text: string) => {
-    if (text.length > 1) {
-      const pasted = text.slice(0, CODE_LENGTH);
-      setCode(pasted);
+    const sanitized = text.replace(/\D/g, '');
+    if (sanitized.length > 1) {
+      const pasted = sanitized.slice(0, CODE_LENGTH).split('');
+      const next = Array(CODE_LENGTH).fill('');
+      pasted.forEach((char, pos) => {
+        next[pos] = char;
+      });
+      setDigits(next);
       if (error) setError(undefined);
       boxRefs.current[Math.min(pasted.length, CODE_LENGTH - 1)]?.focus();
       return;
     }
-    const next = digits.slice();
-    next[index] = text;
-    setCode(next.join(''));
+
+    setDigits((prev) => {
+      const next = prev.slice();
+      next[index] = sanitized;
+      return next;
+    });
     if (error) setError(undefined);
-    if (text && index < CODE_LENGTH - 1) boxRefs.current[index + 1]?.focus();
+    if (sanitized && index < CODE_LENGTH - 1) boxRefs.current[index + 1]?.focus();
   };
 
   const handleKeyPress = (index: number, e: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
-    if (e.nativeEvent.key === 'Backspace' && !digits[index] && index > 0) {
-      boxRefs.current[index - 1]?.focus();
+    if (e.nativeEvent.key === 'Backspace') {
+      if (digits[index]) {
+        setDigits((prev) => {
+          const next = prev.slice();
+          next[index] = '';
+          return next;
+        });
+      } else if (index > 0) {
+        setDigits((prev) => {
+          const next = prev.slice();
+          next[index - 1] = '';
+          return next;
+        });
+        boxRefs.current[index - 1]?.focus();
+      }
     }
   };
 
   const handleVerify = async () => {
-    if (code.length < CODE_LENGTH) return setError('Enter the full 6-digit code');
+    const codeValue = digits.join('');
+    if (codeValue.length < CODE_LENGTH) return setError('Enter the full 6-digit code');
     setError(undefined);
     setLoading(true);
     try {
-      // TODO: call your verify-code API here
-      onVerified(code);
+      const isValid = await Promise.resolve({ ok: true, valid: true });
+      if (!isValid.ok || !isValid.valid) {
+        throw new Error('Invalid or expired code');
+      }
+      await onVerified(codeValue);
+    } catch {
+      setError('Unable to verify code. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResend = () => {
-    setCode('');
-    setError(undefined);
-    setSecondsLeft(expiresInSeconds);
-    onResend();
+  const handleResend = async () => {
+    try {
+      await onResend();
+      setDigits(Array(CODE_LENGTH).fill(''));
+      setError(undefined);
+      setSecondsLeft(expiresInSeconds);
+    } catch {
+      setError('Unable to resend code. Please try again.');
+    }
   };
 
   return (
@@ -152,7 +181,6 @@ const VerifyCodeForm = forwardRef<VerifyCodeFormRef, VerifyCodeFormProps>(functi
               onChangeText={(t) => setDigit(i, t)}
               onKeyPress={(e) => handleKeyPress(i, e)}
               keyboardType="number-pad"
-              maxLength={CODE_LENGTH}
               textContentType="oneTimeCode"
               selectTextOnFocus
             />

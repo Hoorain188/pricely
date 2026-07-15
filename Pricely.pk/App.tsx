@@ -1,19 +1,16 @@
-import React, { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import React from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
+import { Fraunces_600SemiBold, Fraunces_700Bold } from '@expo-google-fonts/fraunces';
 import { Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
-import { Fraunces_600SemiBold } from '@expo-google-fonts/fraunces';
 import { IBMPlexMono_600SemiBold, IBMPlexMono_700Bold } from '@expo-google-fonts/ibm-plex-mono';
 import AppNavigator from './frontend.apk/app/AppNavigator';
-import { useAuthStore } from './frontend.apk/context/AuthContext';
-import { colors } from './frontend.apk/theme/colors';
 
 export default function App() {
-  const { isLoading, loadStoredAuth } = useAuthStore();
-
   const [fontsLoaded] = useFonts({
     Fraunces_600SemiBold,
+    Fraunces_700Bold,
     Inter_400Regular,
     Inter_600SemiBold,
     Inter_700Bold,
@@ -21,33 +18,18 @@ export default function App() {
     IBMPlexMono_700Bold,
   });
 
-  useEffect(() => {
-    loadStoredAuth();
-  }, []);
-
-  if (isLoading || !fontsLoaded) {
+  if (!fontsLoaded) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.accentSolid} />
-        <StatusBar style="light" />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F7F3' }}>
+        <ActivityIndicator size="large" color="#0E6B4F" />
       </View>
     );
   }
 
   return (
     <>
+      <StatusBar style="dark" />
       <AppNavigator />
-      <StatusBar style="light" />
     </>
   );
-}
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
-
+}

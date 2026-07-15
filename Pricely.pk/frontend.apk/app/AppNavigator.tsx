@@ -5,9 +5,10 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 import AuthScreen from './AuthScreen';
 import HomeScreen from './HomeScreen';
+import CategoryScreen from './Categoryscreen';
 import FavoritesScreen from './FavoritesScreen';
 import AlertsScreen from './AlertsScreen';
-import AccountScreen from './ProfileScreen';
+//import AccountScreen from './AccountScreen';
 import AnimatedTabBar from '../components/AnimatedTabBar';
 
 // This is the ONE file that decides which screen the user sees.
@@ -15,6 +16,12 @@ import AnimatedTabBar from '../components/AnimatedTabBar';
 //   - Logged in      -> MainTabs (Home / Favorites / Alerts / Account),
 //                        rendered with AnimatedTabBar so the active icon
 //                        always matches whatever screen is actually shown.
+//
+// CategoryScreen is registered as a Tab.Screen (not a separate Stack) so
+// that `navigation.navigate('Category', { categoryKey })` from HomeScreen
+// resolves directly — AnimatedTabBar filters it out of the visible bar
+// (see its `.filter(route.name !== 'Category')`), so it's reachable but
+// never shown as its own tab icon.
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -26,9 +33,9 @@ function MainTabs() {
       tabBar={(props) => <AnimatedTabBar {...props} />}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Category" component={CategoryScreen} />
       <Tab.Screen name="Favorites" component={FavoritesScreen} />
       <Tab.Screen name="Alerts" component={AlertsScreen} />
-      <Tab.Screen name="Account" component={AccountScreen} />
     </Tab.Navigator>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getCategories, getTrendingSearches, getBestDrops, Category, Deal } from '../services/catalogService';
+import { getCategories, getTrendingSearches, getBestDrops, getSubcategories, Category, Deal, Subcategory } from '../services/catalogService';
 
 // Thin data hooks — HomeScreen calls these instead of importing static
 // arrays, so switching catalogService's internals to real network calls
@@ -64,3 +64,26 @@ export function useBestDrops() {
 
   return { deals, loading };
 }
+
+export function useSubcategories(categoryKey: string) {
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    getSubcategories(categoryKey).then((data) => {
+      if (alive) {
+        setSubcategories(data);
+        setLoading(false);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [categoryKey]);
+
+  return { subcategories, loading };
+}
+
+

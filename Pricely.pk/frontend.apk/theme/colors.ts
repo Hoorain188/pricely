@@ -7,6 +7,11 @@
 
 export const gradients = {
   // primary: 'linear-gradient(135deg, #12A06A 0%, #0E6B4F 55%, #0A4F3A 100%)'
+  // `as const` matters here — expo-linear-gradient's `colors`/`locations`
+  // props require a readonly TUPLE type (at least 2 elements), not a
+  // generic string[]/number[]. Without `as const`, TS widens these array
+  // literals to string[]/number[] and every <LinearGradient colors={...}>
+  // usage across the app fails to typecheck.
   primary: ['#12A06A', '#0E6B4F', '#0A4F3A'] as const,
   primaryLocations: [0, 0.55, 1] as const,
 
@@ -17,6 +22,11 @@ export const gradients = {
   // duo: 'linear-gradient(135deg, #0E6B4F 0%, #155EEF 100%)' — icon
   // squares, avatar, active tab glow ONLY. Never used for buttons.
   duo: ['#0E6B4F', '#155EEF'] as const,
+
+  // Home screen hero carousel — light mint green fading into navy. Wraps
+  // both the search bar and the category carousel in one unified panel.
+  heroCarousel: ['#12A06A', '#0B1E3D'] as const,
+  heroCarouselLocations: [0, 1] as const,
 
   angle: 135,
 };
@@ -53,6 +63,11 @@ export const colors = {
   adminAccent: '#155EEF', // blue stop from gradients.duo — used for 2FA code boxes, active category pill
   accentBlueTint: '#E7EEFC', // light blue background for the active category pill
   iconOnMango: '#3D2606', // dark icon color on mango-gradient surfaces, per kit §07
+  navy: '#0B1E3D', // deep navy — paired with a light mint green for the home hero carousel
+
+  // Decorative palette for subcategory icon badges (Category screen sidebar)
+  // — purely for visual variety between adjacent items, not semantic tokens.
+  categoryPalette: ['#0E6B4F', '#155EEF', '#F2A93B', '#1D9A7C', '#B34D6E', '#C9791A'],
 };
 
 // §04 — radius & elevation scale. Don't invent new radius values;
@@ -89,6 +104,7 @@ export const shadows = {
 // Install: npx expo install @expo-google-fonts/fraunces @expo-google-fonts/inter @expo-google-fonts/ibm-plex-mono expo-font
 export const fonts = {
   headline: 'Fraunces_600SemiBold', // screen titles, "Welcome back", section headers
+  headlineBold: 'Fraunces_700Bold', // extra emphasis — user's name greeting, section headings
   body: 'Inter_400Regular', // paragraphs, placeholders
   label: 'Inter_600SemiBold', // form labels, product names
   button: 'Inter_700Bold', // CTAs, "Forgot password?", tab labels

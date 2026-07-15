@@ -1,25 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, Image, Animated, StyleSheet, Easing } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Search, Flame, ChevronRight, ChevronLeft } from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
+import { Flame, ChevronRight, ChevronLeft } from 'lucide-react-native';
 import LottieHamburger from '../components/LottieHamburger';
 import Sidebar from '../components/Sidebar';
-import { colors, gradients, radii, fonts, shadows } from '../theme/colors';
+import CategoryCarousel from '../components/CategoryCarousel';
+import { colors, radii, fonts, shadows } from '../theme/colors';
 import { useAuthStore } from '../context/AuthContext';
 import { useCategories, useTrendingSearches, useBestDrops } from '../hooks/useCatalog';
 import { dealImageUri, Category, Deal } from '../services/catalogService';
-
-// Rotating search placeholder examples, pulled from different categories
-// so it doesn't look like it's only about phones. (Static copy text, not
-// catalog data, so it stays here rather than in the data layer.)
-const SEARCH_EXAMPLES = [
-  '"Redmi Note 13"...',
-  '"Air Fryer 5L"...',
-  '"Nike Air Max 90"...',
-  '"PS5 Slim"...',
-  '"Samsung 55" 4K TV"...',
-];
 
 const CATEGORY_BASE_COUNT = 4; // All + 3 always visible; rest reveal on "See more"
 const DEALS_COLLAPSED_COUNT = 2;
@@ -69,6 +59,7 @@ function StoreLogo({ store }: { store: Store }) {
 }
 
 export default function HomeScreen() {
+  const navigation = useNavigation<any>();
   const { user } = useAuthStore();
   const { categories } = useCategories();
   const { trending } = useTrendingSearches();
@@ -77,25 +68,10 @@ export default function HomeScreen() {
   const [activeCategory, setActiveCategory] = useState('all');
   const [categoriesExpanded, setCategoriesExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [searchValue, setSearchValue] = useState('');
   const [dealsExpanded, setDealsExpanded] = useState(false);
 
   // Dynamic — comes from whoever is actually signed in, never hardcoded.
   const firstName = user?.name?.trim().split(' ')[0] || 'there';
-
-  // Rotating placeholder — fades out, swaps text, fades back in, every 5s.
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
-  const placeholderAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      Animated.timing(placeholderAnim, { toValue: 0, duration: 250, useNativeDriver: true }).start(() => {
-        setPlaceholderIndex((i) => (i + 1) % SEARCH_EXAMPLES.length);
-        Animated.timing(placeholderAnim, { toValue: 1, duration: 250, useNativeDriver: true }).start();
-      });
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Categories: base set always visible; the rest slide in from the right
   // when "See more" is tapped, and slide back out on "See less".
@@ -119,6 +95,14 @@ export default function HomeScreen() {
   const dealsCount = dealsExpanded ? DEALS_EXPANDED_COUNT : DEALS_COLLAPSED_COUNT;
   const visibleDeals = deals.slice(0, dealsCount);
 
+  const goToCategory = (key: string) => {
+    if (key !== 'all') {
+      navigation.navigate('Category', { categoryKey: key });
+    } else {
+      setActiveCategory(key);
+    }
+  };
+
   return (
     <>
       <SafeAreaView style={styles.root} edges={['top']}>
@@ -135,39 +119,34 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Search + stats card — 135deg green-to-blue per the design
-              kit's `gradients.duo` spec, with a soft glow circle for depth
-              matching the reference. */}
-          <LinearGradient colors={gradients.duo} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.searchCard}>
-            <View style={styles.searchCardGlow} pointerEvents="none" />
-            <Text style={styles.searchEyebrow}>SEARCH ACROSS {STORES.length} STORES</Text>
+          {/* Category image carousel — replaces the old search card. Same
+              search field as before, now living inside the carousel's
+              pinned top panel; images/theming below match the app.
+              Tapping "Explore" on any card navigates to CategoryScreen. */}
+          <CategoryCarousel
+            categories={categories.filter((c) => c.key !== 'all')}
+            storeCount={STORES.length}
+            onExplore={(key: string) => navigation.navigate('Category', { categoryKey: key })}
+            onSearchSubmit={(query: string) => {
+              // TODO: wire this to a real search results screen/API
+              console.log('Search submitted:', query);
+            }}
+          />
 
-            <View style={styles.searchBar}>
-              <Search size={18} color="rgba(255,255,255,0.85)" />
-              <View style={styles.searchInputWrap}>
-                <TextInput value={searchValue} onChangeText={setSearchValue} style={styles.searchInput} />
-                {searchValue.length === 0 && (
-                  <Animated.Text style={[styles.searchPlaceholder, { opacity: placeholderAnim }]} pointerEvents="none">
-                    {SEARCH_EXAMPLES[placeholderIndex]}
-                  </Animated.Text>
-                )}
-              </View>
-            </View>
+          {/* Shop by store — moved above categories */}
+          <Text style={styles.sectionTitle}>Shop by store</Text>
+          <View style={styles.storeRow}>
+            {STORES.map((store) => (
+              <TouchableOpacity key={store.key} style={styles.storeItem} activeOpacity={0.8}>
+                <StoreLogo store={store} />
+                <Text style={styles.storeName}>{store.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-            <View style={styles.statsRow}>
-              <View>
-                <Text style={styles.statValue}>3,140+</Text>
-                <Text style={styles.statLabel}>deals tracked</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View>
-                <Text style={styles.statValue}>Rs 2.1M</Text>
-                <Text style={styles.statLabel}>saved this week</Text>
-              </View>
-            </View>
-          </LinearGradient>
-
-          {/* Category pills — base set + animated "see more" reveal */}
+          {/* Category pills — base set + animated "see more" reveal.
+              Tapping any real category navigates to CategoryScreen; "All"
+              just filters this screen's own state. */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
             {baseCategories.map((cat: Category) => {
               const active = cat.key === activeCategory;
@@ -175,7 +154,7 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   key={cat.key}
                   style={[styles.categoryPill, active && styles.categoryPillActive]}
-                  onPress={() => setActiveCategory(cat.key)}
+                  onPress={() => goToCategory(cat.key)}
                   activeOpacity={0.85}
                 >
                   <Text style={[styles.categoryLabel, active && styles.categoryLabelActive]}>{cat.label}</Text>
@@ -191,7 +170,7 @@ export default function HomeScreen() {
                     <TouchableOpacity
                       key={cat.key}
                       style={[styles.categoryPill, active && styles.categoryPillActive]}
-                      onPress={() => setActiveCategory(cat.key)}
+                      onPress={() => goToCategory(cat.key)}
                       activeOpacity={0.85}
                     >
                       <Text style={[styles.categoryLabel, active && styles.categoryLabelActive]}>{cat.label}</Text>
@@ -213,16 +192,21 @@ export default function HomeScreen() {
             )}
           </ScrollView>
 
-          {/* Trending searches */}
+          {/* Trending searches — 2 rows, scrolls sideways. flexDirection
+              'column' + flexWrap inside a fixed-height horizontal
+              ScrollView is what makes RN wrap items into a second row
+              instead of a single long line. */}
           <Text style={styles.trendingSectionTitle}>Trending searches</Text>
-          <View style={styles.trendingRow}>
-            {trending.map((term: string) => (
-              <TouchableOpacity key={term} style={styles.trendingChip} activeOpacity={0.8}>
-                <Flame size={14} color={colors.adminAccent} />
-                <Text style={styles.trendingLabel}>{term}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.trendingScroll}>
+            <View style={styles.trendingGrid}>
+              {trending.map((term: string) => (
+                <TouchableOpacity key={term} style={styles.trendingChip} activeOpacity={0.8}>
+                  <Flame size={14} color={colors.adminAccent} />
+                  <Text style={styles.trendingLabel}>{term}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
 
           {/* Today's best drops */}
           <View style={styles.sectionHeaderRow}>
@@ -250,17 +234,6 @@ export default function HomeScreen() {
               </View>
             ))}
           </View>
-
-          {/* Shop by store */}
-          <Text style={styles.sectionTitle}>Shop by store</Text>
-          <View style={styles.storeRow}>
-            {STORES.map((store) => (
-              <TouchableOpacity key={store.key} style={styles.storeItem} activeOpacity={0.8}>
-                <StoreLogo store={store} />
-                <Text style={styles.storeName}>{store.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         </ScrollView>
       </SafeAreaView>
 
@@ -282,123 +255,89 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 40 },
+  content: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 32 },
 
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  greeting: { fontSize: 13, fontFamily: fonts.body, color: colors.textTertiary },
-  name: { fontSize: 24, fontFamily: fonts.headline, color: colors.textPrimary, marginTop: 2 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  greeting: { fontSize: 12, fontFamily: fonts.body, color: colors.textTertiary },
+  name: { fontSize: 24, fontFamily: fonts.headlineBold, color: colors.textPrimary, marginTop: 1 },
   menuButton: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     borderRadius: radii.small,
     backgroundColor: colors.textPrimary,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  searchCard: { borderRadius: radii.large, padding: 20, marginBottom: 20, overflow: 'hidden', ...shadows.card },
-  searchCardGlow: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    top: -60,
-    right: -40,
-  },
-  searchEyebrow: { fontSize: 11, fontFamily: fonts.button, color: 'rgba(255,255,255,0.75)', letterSpacing: 1, marginBottom: 14 },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    borderRadius: radii.medium,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-    paddingHorizontal: 14,
-    height: 48,
-    marginBottom: 18,
-  },
-  searchInputWrap: { flex: 1, justifyContent: 'center' },
-  searchInput: { fontFamily: fonts.body, fontSize: 15, color: colors.onDarkPrimary, padding: 0 },
-  searchPlaceholder: {
-    position: 'absolute',
-    left: 0,
-    fontFamily: fonts.body,
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.7)',
-  },
-  statsRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  statValue: { fontSize: 18, fontFamily: fonts.monoEmphasis, color: colors.accentMango },
-  statLabel: { fontSize: 12, fontFamily: fonts.body, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
-  statDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.25)' },
-
-  categoryScroll: { marginBottom: 24 },
+  categoryScroll: { marginBottom: 16 },
   categoryPill: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: radii.pill,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    marginRight: 10,
+    marginRight: 8,
   },
   categoryPillActive: { backgroundColor: colors.accentBlueTint, borderColor: colors.adminAccent },
-  categoryLabel: { fontSize: 13, fontFamily: fonts.label, color: colors.textSecondary },
+  categoryLabel: { fontSize: 12, fontFamily: fonts.label, color: colors.textSecondary },
   categoryLabelActive: { color: colors.adminAccent },
   extraCategoriesRow: { flexDirection: 'row' },
   categoryTogglePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: radii.pill,
     backgroundColor: colors.accentTint,
-    marginRight: 10,
+    marginRight: 8,
   },
-  categoryToggleLabel: { fontSize: 13, fontFamily: fonts.button, color: colors.accentSolid },
+  categoryToggleLabel: { fontSize: 12, fontFamily: fonts.button, color: colors.accentSolid },
 
-  sectionTitle: { fontSize: 19, fontFamily: fonts.headline, color: colors.textPrimary, marginBottom: 12 },
+  sectionTitle: { fontSize: 19, fontFamily: fonts.headlineBold, color: colors.textPrimary, marginBottom: 8 },
   trendingSectionTitle: {
-    fontSize: 20,
-    fontFamily: fonts.button, // Inter Bold — noticeably bolder than the Fraunces section titles
+    fontSize: 19,
+    fontFamily: fonts.headlineBold,
     color: colors.textPrimary,
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
-  seeAll: { fontSize: 13, fontFamily: fonts.button, color: colors.accentSolid },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
+  seeAll: { fontSize: 12, fontFamily: fonts.button, color: colors.accentSolid },
 
-  trendingRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
+  trendingScroll: { marginBottom: 16 },
+  trendingGrid: { flexDirection: 'column', flexWrap: 'wrap', height: 2 * 42 + 8 }, // 2 rows of chips
   trendingChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     backgroundColor: colors.accentTint,
     borderRadius: radii.pill,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginRight: 8,
+    marginBottom: 8,
   },
-  trendingLabel: { fontSize: 13, fontFamily: fonts.label, color: colors.textPrimary },
+  trendingLabel: { fontSize: 12, fontFamily: fonts.label, color: colors.textPrimary },
 
-  dealsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 24 },
+  dealsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
   dealCard: {
     width: '47%',
     backgroundColor: colors.surface,
     borderRadius: radii.medium,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 10,
+    padding: 8,
     ...shadows.card,
   },
-  dealImage: { width: '100%', height: 100, borderRadius: radii.small, backgroundColor: colors.accentTint, marginBottom: 10 },
-  dealName: { fontSize: 13, fontFamily: fonts.body, color: colors.textSecondary, marginBottom: 4 },
-  dealPrice: { fontSize: 16, fontFamily: fonts.monoEmphasis, color: colors.textPrimary, marginBottom: 8 },
-  discountBadge: { alignSelf: 'flex-start', backgroundColor: colors.accentMango, borderRadius: radii.small, paddingHorizontal: 8, paddingVertical: 4 },
-  discountText: { fontSize: 11, fontFamily: fonts.button, color: colors.onDarkPrimary },
+  dealImage: { width: '100%', height: 78, borderRadius: radii.small, backgroundColor: colors.accentTint, marginBottom: 8 },
+  dealName: { fontSize: 12, fontFamily: fonts.body, color: colors.textSecondary, marginBottom: 3 },
+  dealPrice: { fontSize: 15, fontFamily: fonts.monoEmphasis, color: colors.textPrimary, marginBottom: 6 },
+  discountBadge: { alignSelf: 'flex-start', backgroundColor: colors.accentMango, borderRadius: radii.small, paddingHorizontal: 7, paddingVertical: 3 },
+  discountText: { fontSize: 10, fontFamily: fonts.button, color: colors.onDarkPrimary },
 
-  storeRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  storeItem: { alignItems: 'center', gap: 8 },
+  storeRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
+  storeItem: { alignItems: 'center', gap: 6 },
   storeBadge: {
     width: 56,
     height: 56,

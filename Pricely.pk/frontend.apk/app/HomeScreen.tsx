@@ -95,6 +95,14 @@ export default function HomeScreen() {
   const dealsCount = dealsExpanded ? DEALS_EXPANDED_COUNT : DEALS_COLLAPSED_COUNT;
   const visibleDeals = deals.slice(0, dealsCount);
 
+  const goToCategory = (key: string) => {
+    if (key !== 'all') {
+      navigation.navigate('Category', { categoryKey: key });
+    } else {
+      setActiveCategory(key);
+    }
+  };
+
   return (
     <>
       <SafeAreaView style={styles.root} edges={['top']}>
@@ -113,13 +121,12 @@ export default function HomeScreen() {
 
           {/* Category image carousel — replaces the old search card. Same
               search field as before, now living inside the carousel's
-              pinned top panel; images/theming below match the app. */}
+              pinned top panel; images/theming below match the app.
+              Tapping "Explore" on any card navigates to CategoryScreen. */}
           <CategoryCarousel
             categories={categories.filter((c) => c.key !== 'all')}
             storeCount={STORES.length}
-            onExplore={(key: string) => {
-              navigation.navigate('Category', { categoryKey: key });
-            }}
+            onExplore={(key: string) => navigation.navigate('Category', { categoryKey: key })}
             onSearchSubmit={(query: string) => {
               // TODO: wire this to a real search results screen/API
               console.log('Search submitted:', query);
@@ -137,7 +144,9 @@ export default function HomeScreen() {
             ))}
           </View>
 
-          {/* Category pills — base set + animated "see more" reveal */}
+          {/* Category pills — base set + animated "see more" reveal.
+              Tapping any real category navigates to CategoryScreen; "All"
+              just filters this screen's own state. */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
             {baseCategories.map((cat: Category) => {
               const active = cat.key === activeCategory;
@@ -145,13 +154,7 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   key={cat.key}
                   style={[styles.categoryPill, active && styles.categoryPillActive]}
-                  onPress={() => {
-                    if (cat.key !== 'all') {
-                      navigation.navigate('Category', { categoryKey: cat.key });
-                    } else {
-                      setActiveCategory(cat.key);
-                    }
-                  }}
+                  onPress={() => goToCategory(cat.key)}
                   activeOpacity={0.85}
                 >
                   <Text style={[styles.categoryLabel, active && styles.categoryLabelActive]}>{cat.label}</Text>
@@ -167,13 +170,7 @@ export default function HomeScreen() {
                     <TouchableOpacity
                       key={cat.key}
                       style={[styles.categoryPill, active && styles.categoryPillActive]}
-                      onPress={() => {
-                        if (cat.key !== 'all') {
-                          navigation.navigate('Category', { categoryKey: cat.key });
-                        } else {
-                          setActiveCategory(cat.key);
-                        }
-                      }}
+                      onPress={() => goToCategory(cat.key)}
                       activeOpacity={0.85}
                     >
                       <Text style={[styles.categoryLabel, active && styles.categoryLabelActive]}>{cat.label}</Text>

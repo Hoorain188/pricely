@@ -60,13 +60,21 @@ import { loremflickrUri } from '../components/CategoryCarousel';
 import { Subcategory, SubcategoryProduct } from '../services/catalogService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const FLASH_WIDTH = SCREEN_WIDTH - 32 - 40;
-const FLASH_SNAP = FLASH_WIDTH + 10;
 const SIDEBAR_WIDTH = 72;
-const GRID_GAP = 12;
 const CONTENT_PADDING = 16;
-const CARD_WIDTH = (SCREEN_WIDTH - SIDEBAR_WIDTH - (CONTENT_PADDING * 2) - GRID_GAP) / 2;
+const GRID_GAP = 12;
+// FLASH_WIDTH must subtract SIDEBAR_WIDTH too — the flash-sale carousel
+// lives inside the content column (SCREEN_WIDTH - SIDEBAR_WIDTH wide), not
+// the full screen. Missing this caused cards to overflow past the content
+// area, same bug CARD_WIDTH below already accounts for correctly.
+const FLASH_WIDTH = SCREEN_WIDTH - SIDEBAR_WIDTH - CONTENT_PADDING * 2 - 40;
+const FLASH_SNAP = FLASH_WIDTH + 10;
+const CARD_WIDTH = (SCREEN_WIDTH - SIDEBAR_WIDTH - CONTENT_PADDING * 2 - GRID_GAP) / 2;
 
+// Maps a subcategory's `imageTag` (from catalogService — plain data, no
+// React) to a Lucide icon. Keyed by tag rather than by subcategory key, so
+// this doesn't need updating every time a new subcategory is added to the
+// data — only when a genuinely new *kind* of image tag shows up.
 const getIconForTag = (tag: string): LucideIcon => {
   switch (tag.toLowerCase()) {
     case 'smartphone':
@@ -121,9 +129,11 @@ const getIconForTag = (tag: string): LucideIcon => {
       return Droplet;
     case 'makeup':
     case 'palette':
+    case 'homedecor': // Decor subcategory — was falling through to Package
       return Palette;
     case 'haircare':
     case 'scissors':
+    case 'hairstyling': // Haircare subcategory — was falling through to Package
       return Scissors;
     case 'fragrances':
     case 'perfume':
@@ -145,6 +155,7 @@ const getIconForTag = (tag: string): LucideIcon => {
       return BedDouble;
     case 'lighting':
     case 'lamp':
+    case 'lightbulb': // Appliance Lighting subcategory — was falling through to Package
       return Lamp;
     case 'storage':
     case 'archive':
@@ -174,13 +185,15 @@ const getIconForTag = (tag: string): LucideIcon => {
     case 'wallets':
     case 'wallet':
       return Wallet;
+    case 'makeupbrush': // Beauty Tools subcategory — was falling through to Package
+      return Gem;
     case 'belts':
     case 'leatherbelt':
     case 'package':
     default:
       return Package;
   }
-}
+};
 
 const PRODUCT_TINTS = ['#E4F0E9', '#E8EEFC', '#EAEAEA', '#F5E9D6', '#EEE6F5', '#FDE8E8'];
 const FLASH_DISCOUNTS = [20, 30, 15];
@@ -206,14 +219,15 @@ export default function CategoryScreen() {
   const [searchValue, setSearchValue] = useState('');
   const flashScrollX = useRef(new Animated.Value(0)).current;
 
-  // Update activeCategory if route.params changes
+  // Update activeCategory if route.params changes (e.g. tapping a
+  // different category pill on Home while already on this screen).
   useEffect(() => {
     if (route.params?.categoryKey) {
       setActiveCategory(route.params.categoryKey);
     }
   }, [route.params?.categoryKey]);
 
-  // Handle active subcategory fallback reactive to loaded subcategories
+  // Keep activeSubcategory valid whenever the subcategory list changes.
   useEffect(() => {
     if (subcategories.length > 0) {
       if (!activeSubcategory || !subcategories.some((s) => s.key === activeSubcategory)) {
@@ -228,8 +242,7 @@ export default function CategoryScreen() {
     setActiveCategory(key);
   };
 
-  const categoryLabel =
-    categories.find((c) => c.key === activeCategory)?.label ?? activeCategory;
+  const categoryLabel = categories.find((c) => c.key === activeCategory)?.label ?? activeCategory;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -350,7 +363,7 @@ export default function CategoryScreen() {
                   const scale = flashScrollX.interpolate({ inputRange, outputRange: [0.9, 1, 0.9], extrapolate: 'clamp' });
                   const opacity = flashScrollX.interpolate({ inputRange, outputRange: [0.6, 1, 0.6], extrapolate: 'clamp' });
                   const saleTag = CATEGORY_SALE_TAGS[activeCategory] || 'shopping';
-                  const imageLock = (activeCategory.length) * 15 + index;
+                  const imageLock = activeCategory.length * 15 + index;
 
                   return (
                     <Animated.View

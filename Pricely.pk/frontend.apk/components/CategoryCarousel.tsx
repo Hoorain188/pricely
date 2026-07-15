@@ -122,22 +122,22 @@ export default function CategoryCarousel({ categories, storeCount, onExplore, on
 
                     return (
                         <TouchableOpacity activeOpacity={0.92} onPress={() => onExplore(item.key)}>
-                        <Animated.View style={[styles.card, { marginRight: CARD_SPACING, transform: [{ scale }], opacity }]}>
-                            <Image source={{ uri: categoryImageUri(item.key) }} style={styles.cardImage} resizeMode="cover" />
-                            {/* Same light-green-to-navy direction as the hero background,
-                  just steeper, so each card's text stays legible. */}
-                            <LinearGradient
-                                colors={['transparent', 'rgba(11,30,61,0.35)', colors.navy]}
-                                locations={[0, 0.55, 1]}
-                                style={StyleSheet.absoluteFillObject}
-                            />
-                            <View style={styles.cardContent}>
-                                <Text style={styles.cardTitle}>{item.label}</Text>
-                                <View style={styles.explorePill}>
-                                    <Text style={styles.explorePillText}>Explore</Text>
+                            <Animated.View style={[styles.card, { marginRight: CARD_SPACING, transform: [{ scale }], opacity }]}>
+                                <Image source={{ uri: categoryImageUri(item.key) }} style={styles.cardImage} resizeMode="cover" />
+                                {/* Same light-green-to-navy direction as the hero background,
+                    just steeper, so each card's text stays legible. */}
+                                <LinearGradient
+                                    colors={['transparent', 'rgba(11,30,61,0.35)', colors.navy]}
+                                    locations={[0, 0.55, 1]}
+                                    style={StyleSheet.absoluteFillObject}
+                                />
+                                <View style={styles.cardContent}>
+                                    <Text style={styles.cardTitle}>{item.label}</Text>
+                                    <View style={styles.explorePill}>
+                                        <Text style={styles.explorePillText}>Explore</Text>
+                                    </View>
                                 </View>
-                            </View>
-                        </Animated.View>
+                            </Animated.View>
                         </TouchableOpacity>
                     );
                 }}

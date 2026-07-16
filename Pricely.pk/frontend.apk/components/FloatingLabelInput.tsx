@@ -9,13 +9,15 @@ import {
   Easing,
   KeyboardTypeOptions,
 } from 'react-native';
-import { LucideIcon, Eye, EyeOff } from 'lucide-react-native';
+import { LucideIcon } from 'lucide-react-native';
+import LottieToggleIcon from './LottieToggleIcon';
+import visibility from '../../assets/Lottie/Visibility.json';
 import { colors, radii } from '../theme/colors';
 import { fonts } from '../theme/colors';
 
 interface FloatingLabelInputProps {
   label: string;
-  icon?: LucideIcon;
+  icon?: LucideIcon; // e.g. import { Mail } from 'lucide-react-native'; icon={Mail}
   value: string;
   onChangeText: (text: string) => void;
   secureTextEntry?: boolean;
@@ -28,10 +30,9 @@ interface FloatingLabelInputProps {
 // Label floats up but stays INSIDE the field (never crosses the border).
 // Prominent by default — bigger resting size, SemiBold weight, strong
 // color contrast at every state.
-// When an error is set the field shakes horizontally and turns red.
 export default function FloatingLabelInput({
   label,
-  icon,
+  icon: Icon,
   value,
   onChangeText,
   secureTextEntry,
@@ -44,31 +45,11 @@ export default function FloatingLabelInput({
   const [hidden, setHidden] = useState(!!secureTextEntry);
   const labelAnim = useRef(new Animated.Value(value ? 1 : 0)).current;
   const borderAnim = useRef(new Animated.Value(0)).current;
-  const shakeAnim = useRef(new Animated.Value(0)).current;
-  const Icon = icon;
 
-  // Float label when value changes externally
   useEffect(() => {
     animate(labelAnim, value || isFocused ? 1 : 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
-
-  // Shake + red flash whenever an error appears
-  const prevError = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (error && error !== prevError.current) {
-      // Horizontal shake: left → right → left → right → center
-      Animated.sequence([
-        Animated.timing(shakeAnim, { toValue: -8, duration: 55, useNativeDriver: false, easing: Easing.linear }),
-        Animated.timing(shakeAnim, { toValue: 8, duration: 55, useNativeDriver: false, easing: Easing.linear }),
-        Animated.timing(shakeAnim, { toValue: -6, duration: 50, useNativeDriver: false, easing: Easing.linear }),
-        Animated.timing(shakeAnim, { toValue: 6, duration: 50, useNativeDriver: false, easing: Easing.linear }),
-        Animated.timing(shakeAnim, { toValue: -3, duration: 40, useNativeDriver: false, easing: Easing.linear }),
-        Animated.timing(shakeAnim, { toValue: 0, duration: 40, useNativeDriver: false, easing: Easing.linear }),
-      ]).start();
-    }
-    prevError.current = error;
-  }, [error]);
 
   const animate = (anim: Animated.Value, toValue: number) =>
     Animated.timing(anim, {
@@ -90,8 +71,8 @@ export default function FloatingLabelInput({
     animate(borderAnim, 0);
   };
 
-  const labelTop = labelAnim.interpolate({ inputRange: [0, 1], outputRange: [17, 3] });
-  const labelSize = labelAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 11] });
+  const labelTop = labelAnim.interpolate({ inputRange: [0, 1], outputRange: [17, 6] });
+  const labelSize = labelAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] });
   const labelColor = labelAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [colors.textSecondary, colors.accentSolid],
@@ -109,12 +90,9 @@ export default function FloatingLabelInput({
           styles.shell,
           { borderBottomColor: error ? colors.danger : underlineColor },
           error ? styles.shellError : null,
-          { transform: [{ translateX: shakeAnim }] },
         ]}
       >
-        {Icon ? (
-          <Icon size={17} color={error ? colors.danger : iconColor} style={styles.icon} />
-        ) : null}
+        {Icon ? <Icon size={18} color={error ? colors.danger : iconColor} strokeWidth={2} style={styles.icon} /> : null}
         <View style={styles.inputArea}>
           <Animated.Text
             style={[
@@ -126,7 +104,7 @@ export default function FloatingLabelInput({
             {label}
           </Animated.Text>
           <TextInput
-            style={[styles.input, error ? styles.inputError : null]}
+            style={styles.input}
             value={value}
             onChangeText={onChangeText}
             onFocus={handleFocus}
@@ -142,11 +120,20 @@ export default function FloatingLabelInput({
             onPress={() => setHidden((h) => !h)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            {hidden ? <Eye size={18} color={colors.textSecondary} /> : <EyeOff size={18} color={colors.textSecondary} />}
+            <LottieToggleIcon
+              source={visibility}
+              active={hidden}
+              size={22}
+              duration={250}
+              colorFilters={[
+                { keypath: 'eye', color: colors.textSecondary },
+                { keypath: 'lense', color: colors.textSecondary },
+              ]}
+            />
           </TouchableOpacity>
         )}
       </Animated.View>
-      {error ? <Text style={styles.errorText}>⚠ {error}</Text> : hint ? <Text style={styles.hint}>{hint}</Text> : null}
+      {error ? <Text style={styles.errorText}>{error}</Text> : hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
   );
 }
@@ -164,7 +151,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 58,
   },
-  shellError: { borderColor: colors.danger, backgroundColor: '#FFF5F5' },
+  shellError: { borderColor: colors.danger },
   icon: { marginRight: 10 },
   inputArea: { flex: 1, justifyContent: 'center' },
   label: { position: 'absolute', left: 0, fontFamily: fonts.label, fontWeight: '600' },
@@ -173,10 +160,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontWeight: '500',
     color: colors.textPrimary,
-    paddingTop: 20,
+    paddingTop: 17,
     height: 58,
   },
-  inputError: { color: colors.danger },
   hint: { fontSize: 12, fontFamily: fonts.body, color: colors.textTertiary, marginTop: 6, marginLeft: 4 },
   errorText: { fontSize: 12, fontFamily: fonts.body, color: colors.danger, marginTop: 6, marginLeft: 4, fontWeight: '600' },
 });

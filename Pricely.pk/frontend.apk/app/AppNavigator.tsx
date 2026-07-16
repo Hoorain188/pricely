@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -8,20 +8,12 @@ import HomeScreen from './HomeScreen';
 import CategoryScreen from './Categoryscreen';
 import FavoritesScreen from './FavoritesScreen';
 import AlertsScreen from './AlertsScreen';
-//import AccountScreen from './AccountScreen';
+import ProfileScreen from './ProfileScreen';
+import ProductDetailScreen from './ProductDetailScreen';
+import SettingsScreen from './SettingsScreen';
+import HelpSupportScreen from './HelpSupportScreen';
 import AnimatedTabBar from '../components/AnimatedTabBar';
-
-// This is the ONE file that decides which screen the user sees.
-//   - Not logged in  -> AuthScreen (login/signup, single-page swap)
-//   - Logged in      -> MainTabs (Home / Favorites / Alerts / Account),
-//                        rendered with AnimatedTabBar so the active icon
-//                        always matches whatever screen is actually shown.
-//
-// CategoryScreen is registered as a Tab.Screen (not a separate Stack) so
-// that `navigation.navigate('Category', { categoryKey })` from HomeScreen
-// resolves directly — AnimatedTabBar filters it out of the visible bar
-// (see its `.filter(route.name !== 'Category')`), so it's reachable but
-// never shown as its own tab icon.
+import { useAuthStore } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -36,24 +28,34 @@ function MainTabs() {
       <Tab.Screen name="Category" component={CategoryScreen} />
       <Tab.Screen name="Favorites" component={FavoritesScreen} />
       <Tab.Screen name="Alerts" component={AlertsScreen} />
+      <Tab.Screen name="Account" component={ProfileScreen} />
+      <Tab.Screen name="ProductDetail" component={ProductDetailScreen} />
     </Tab.Navigator>
   );
 }
 
 export default function AppNavigator() {
-  // Swap this for your real auth state (context, redux, a stored token
-  // check, etc). This local flag is here so the file runs standalone.
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { isAuthenticated, loadStoredAuth, isLoading } = useAuthStore();
+
+  React.useEffect(() => {
+    loadStoredAuth();
+  }, []);
+
+  if (isLoading) {
+    return null; // Render nothing while auth loads
+  }
 
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {isLoggedIn ? (
-          <Stack.Screen name="Main" component={MainTabs} />
+        {isAuthenticated ? (
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
+          </>
         ) : (
-          <Stack.Screen name="Auth">
-            {(props) => <AuthScreen {...props} onAuthenticated={() => setIsLoggedIn(true)} />}
-          </Stack.Screen>
+          <Stack.Screen name="Auth" component={AuthScreen} />
         )}
       </Stack.Navigator>
     </NavigationContainer>

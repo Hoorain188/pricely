@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Image, Animated, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Search } from 'lucide-react-native';
+import LottieSearchIcon from './Lottiesearchicon';
 import { colors, gradients, radii, fonts, shadows } from '../theme/colors';
 import { Category } from '../services/catalogService';
 
@@ -84,7 +84,7 @@ export default function CategoryCarousel({ categories, storeCount, onExplore, on
             <View style={styles.searchPanel}>
                 <Text style={styles.searchEyebrow}>SEARCH ACROSS {storeCount} STORES</Text>
                 <View style={styles.searchBar}>
-                    <Search size={18} color="rgba(255,255,255,0.85)" />
+                    <LottieSearchIcon active={searchValue.length > 0} size={18} color="rgba(255,255,255,0.85)" />
                     <View style={styles.searchInputWrap}>
                         <TextInput
                             value={searchValue}

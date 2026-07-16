@@ -19,7 +19,6 @@ export default function PressExpandButton({ label, onPress, style, loading }: Pr
 
   const onLayoutContainer = (e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width);
 
-  // Trigger animation based on loading state or user tap (isPressed)
   useEffect(() => {
     Animated.timing(anim, {
       toValue: (loading || isPressed) ? 1 : 0,
@@ -32,9 +31,9 @@ export default function PressExpandButton({ label, onPress, style, loading }: Pr
     inputRange: [0, 1],
     outputRange: [CIRCLE, Math.max(width, CIRCLE)],
   });
-  
+
   const arrowTranslate = anim.interpolate({ inputRange: [0, 1], outputRange: [-5, 0] });
-  
+
   const textColor = anim.interpolate({
     inputRange: [0, 1],
     outputRange: [colors.accentSolid, '#f9f9f9'],
@@ -43,8 +42,6 @@ export default function PressExpandButton({ label, onPress, style, loading }: Pr
   const handlePress = () => {
     if (loading) return;
     setIsPressed(true);
-    
-    // Let the animation complete, then call onPress and reset
     setTimeout(() => {
       onPress();
       setIsPressed(false);
@@ -54,7 +51,6 @@ export default function PressExpandButton({ label, onPress, style, loading }: Pr
   return (
     <TouchableWithoutFeedback onPress={handlePress}>
       <View style={[styles.container, style]} onLayout={onLayoutContainer}>
-        {/* Expanding Circle Background */}
         <Animated.View style={[styles.circle, { width: circleWidth }]}>
           <LinearGradient
             colors={gradients.primary}
@@ -64,14 +60,11 @@ export default function PressExpandButton({ label, onPress, style, loading }: Pr
             style={StyleSheet.absoluteFillObject}
           />
         </Animated.View>
-
-        {/* Foreground Content */}
         <View style={styles.foreground} pointerEvents="none">
           <Animated.Text style={[styles.label, { color: textColor }]}>
             {loading ? 'Please wait…' : label}
           </Animated.Text>
           <Animated.View style={{ transform: [{ translateX: arrowTranslate }] }}>
-            {/* Exact SVG from the user's btn-4 */}
             <Svg width="15" height="10" viewBox="0 0 13 10">
               <Path d="M1,5 L11,5" stroke="#f9f9f9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
               <Polyline points="8 1 12 5 8 9" stroke="#f9f9f9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
@@ -104,7 +97,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10, // matching margin-left: 10px
+    gap: 10,
   },
   label: {
     fontSize: 18,

@@ -22,7 +22,7 @@ export default function BrandMark({ height = 32, align = 'left', textColor }: Br
   return (
     <View style={[styles.row, align === 'center' && styles.center]}>
       <Image
-        source={require('../assets/logo.png')}
+        source={require('../../assets/logo.png')}
         style={[{ width, height }, textColor ? { tintColor: textColor } : null]}
         resizeMode="contain"
       />

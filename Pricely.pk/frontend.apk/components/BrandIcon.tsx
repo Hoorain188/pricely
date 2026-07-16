@@ -19,7 +19,7 @@ export default function BrandIcon({ size = 28, color }: BrandIconProps) {
 
     return (
         <Image
-            source={require('../assets/logo-icon.png')}
+            source={require('../../assets/logo-icon.png')}
             style={[{ width, height: size }, color ? { tintColor: color } : null, styles.icon]}
             resizeMode="contain"
         />

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,15 +9,12 @@ import {
   Animated,
   StyleSheet,
   Dimensions,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import {
-  Search,
-  Heart,
-  ArrowLeft,
+  SlidersHorizontal,
   Smartphone,
   Tablet,
   Watch,
@@ -58,23 +55,20 @@ import { colors, gradients, radii, fonts, shadows } from '../theme/colors';
 import { useCategories, useSubcategories } from '../hooks/useCatalog';
 import { loremflickrUri } from '../components/CategoryCarousel';
 import { Subcategory, SubcategoryProduct } from '../services/catalogService';
+import LottieBackButton from '../components/Lottiebackbutton';
+import LottieToggleIcon from '../components/LottieToggleIcon';
+import LottieSearchIcon from '../components/Lottiesearchicon';
+import LottieLoader from '../components/Lottieloader';
+import FilterSheet, { FilterState, sortProducts } from '../components/Filtersheet';
+import heartJson from '../../assets/Lottie/Heart.json';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SIDEBAR_WIDTH = 72;
 const CONTENT_PADDING = 16;
 const GRID_GAP = 12;
-// FLASH_WIDTH must subtract SIDEBAR_WIDTH too — the flash-sale carousel
-// lives inside the content column (SCREEN_WIDTH - SIDEBAR_WIDTH wide), not
-// the full screen. Missing this caused cards to overflow past the content
-// area, same bug CARD_WIDTH below already accounts for correctly.
-const FLASH_WIDTH = SCREEN_WIDTH - SIDEBAR_WIDTH - CONTENT_PADDING * 2 - 40;
+const CARD_WIDTH = (SCREEN_WIDTH - CONTENT_PADDING * 2 - GRID_GAP) / 2;
+const FLASH_WIDTH = SCREEN_WIDTH - CONTENT_PADDING * 2 - 40;
 const FLASH_SNAP = FLASH_WIDTH + 10;
-const CARD_WIDTH = (SCREEN_WIDTH - SIDEBAR_WIDTH - CONTENT_PADDING * 2 - GRID_GAP) / 2;
 
-// Maps a subcategory's `imageTag` (from catalogService — plain data, no
-// React) to a Lucide icon. Keyed by tag rather than by subcategory key, so
-// this doesn't need updating every time a new subcategory is added to the
-// data — only when a genuinely new *kind* of image tag shows up.
 const getIconForTag = (tag: string): LucideIcon => {
   switch (tag.toLowerCase()) {
     case 'smartphone':
@@ -129,11 +123,11 @@ const getIconForTag = (tag: string): LucideIcon => {
       return Droplet;
     case 'makeup':
     case 'palette':
-    case 'homedecor': // Decor subcategory — was falling through to Package
+    case 'homedecor':
       return Palette;
     case 'haircare':
     case 'scissors':
-    case 'hairstyling': // Haircare subcategory — was falling through to Package
+    case 'hairstyling':
       return Scissors;
     case 'fragrances':
     case 'perfume':
@@ -155,7 +149,7 @@ const getIconForTag = (tag: string): LucideIcon => {
       return BedDouble;
     case 'lighting':
     case 'lamp':
-    case 'lightbulb': // Appliance Lighting subcategory — was falling through to Package
+    case 'lightbulb':
       return Lamp;
     case 'storage':
     case 'archive':
@@ -185,7 +179,7 @@ const getIconForTag = (tag: string): LucideIcon => {
     case 'wallets':
     case 'wallet':
       return Wallet;
-    case 'makeupbrush': // Beauty Tools subcategory — was falling through to Package
+    case 'makeupbrush':
       return Gem;
     case 'belts':
     case 'leatherbelt':
@@ -195,7 +189,6 @@ const getIconForTag = (tag: string): LucideIcon => {
   }
 };
 
-const PRODUCT_TINTS = ['#E4F0E9', '#E8EEFC', '#EAEAEA', '#F5E9D6', '#EEE6F5', '#FDE8E8'];
 const FLASH_DISCOUNTS = [20, 30, 15];
 
 const CATEGORY_SALE_TAGS: Record<string, string> = {
@@ -217,17 +210,15 @@ export default function CategoryScreen() {
   const { subcategories, loading } = useSubcategories(activeCategory);
   const [activeSubcategory, setActiveSubcategory] = useState('');
   const [searchValue, setSearchValue] = useState('');
+  const [favorite, setFavorite] = useState(false);
+  const [filterVisible, setFilterVisible] = useState(false);
+  const [filter, setFilter] = useState<FilterState>({ sort: 'relevance', stores: [] });
   const flashScrollX = useRef(new Animated.Value(0)).current;
 
-  // Update activeCategory if route.params changes (e.g. tapping a
-  // different category pill on Home while already on this screen).
   useEffect(() => {
-    if (route.params?.categoryKey) {
-      setActiveCategory(route.params.categoryKey);
-    }
+    if (route.params?.categoryKey) setActiveCategory(route.params.categoryKey);
   }, [route.params?.categoryKey]);
 
-  // Keep activeSubcategory valid whenever the subcategory list changes.
   useEffect(() => {
     if (subcategories.length > 0) {
       if (!activeSubcategory || !subcategories.some((s) => s.key === activeSubcategory)) {
@@ -237,12 +228,17 @@ export default function CategoryScreen() {
   }, [subcategories, activeSubcategory]);
 
   const activeSub = subcategories.find((s) => s.key === activeSubcategory) ?? subcategories[0];
-
-  const selectCategory = (key: string) => {
-    setActiveCategory(key);
-  };
-
   const categoryLabel = categories.find((c) => c.key === activeCategory)?.label ?? activeCategory;
+
+  const filteredProducts = useMemo(() => {
+    if (!activeSub) return [];
+    let list = activeSub.products;
+    if (filter.stores.length > 0) {
+      const demoStores = ['Daraz', 'Telemart', 'Mega.pk', 'Amazon'];
+      list = list.filter((_, i) => filter.stores.includes(demoStores[i % demoStores.length]));
+    }
+    return sortProducts(list, filter.sort);
+  }, [activeSub, filter]);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -254,19 +250,25 @@ export default function CategoryScreen() {
         end={{ x: 1, y: 0 }}
         style={styles.header}
       >
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-          <ArrowLeft size={20} color={colors.onDarkPrimary} />
-        </TouchableOpacity>
+        <LottieBackButton onPress={() => navigation.goBack()} size={30} />
         <Text style={styles.headerTitle}>{categoryLabel}</Text>
-        <TouchableOpacity style={styles.favButton} activeOpacity={0.8}>
-          <Heart size={20} color={colors.onDarkPrimary} />
+        <TouchableOpacity style={styles.favButton} activeOpacity={0.8} onPress={() => setFavorite((f) => !f)}>
+          <LottieToggleIcon
+            source={heartJson}
+            active={favorite}
+            size={22}
+            colorFilters={[
+              { keypath: 'heart', color: colors.onDarkPrimary },
+              { keypath: 'heart Fill', color: colors.onDarkPrimary },
+            ]}
+          />
         </TouchableOpacity>
       </LinearGradient>
 
-      {/* Search bar */}
+      {/* Search + filter */}
       <View style={styles.searchRow}>
         <View style={styles.searchBar}>
-          <Search size={18} color={colors.textTertiary} />
+          <LottieSearchIcon active={searchValue.length > 0} size={18} color={colors.textTertiary} />
           <TextInput
             value={searchValue}
             onChangeText={setSearchValue}
@@ -275,6 +277,9 @@ export default function CategoryScreen() {
             style={styles.searchInput}
           />
         </View>
+        <TouchableOpacity style={styles.filterBtn} activeOpacity={0.8} onPress={() => setFilterVisible(true)}>
+          <SlidersHorizontal size={18} color={colors.textPrimary} />
+        </TouchableOpacity>
       </View>
 
       {/* Top-level category tabs */}
@@ -293,7 +298,7 @@ export default function CategoryScreen() {
                 key={cat.key}
                 style={[styles.tabPill, active && styles.tabPillActive]}
                 activeOpacity={0.85}
-                onPress={() => selectCategory(cat.key)}
+                onPress={() => setActiveCategory(cat.key)}
               >
                 <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{cat.label}</Text>
               </TouchableOpacity>
@@ -301,118 +306,117 @@ export default function CategoryScreen() {
           })}
       </ScrollView>
 
-      {/* Sidebar + content */}
-      <View style={styles.body}>
-        {loading ? (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <ActivityIndicator size="large" color={colors.accentSolid} />
+      {/* Subcategories */}
+      {!loading && subcategories.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.subScroll}
+          contentContainerStyle={styles.subScrollContent}
+        >
+          {subcategories.map((sub: Subcategory, index: number) => {
+            const active = sub.key === activeSubcategory;
+            const badgeColor = colors.categoryPalette[index % colors.categoryPalette.length];
+            const SubIcon = getIconForTag(sub.imageTag);
+            return (
+              <TouchableOpacity
+                key={sub.key}
+                style={styles.subItem}
+                activeOpacity={0.8}
+                onPress={() => setActiveSubcategory(sub.key)}
+              >
+                <View style={[styles.subIcon, { backgroundColor: badgeColor }, active && styles.subIconActive]}>
+                  <SubIcon size={18} color={colors.onDarkPrimary} strokeWidth={2} />
+                </View>
+                <Text style={[styles.subLabel, active && styles.subLabelActive]} numberOfLines={1}>
+                  {sub.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      {/* Content */}
+      {loading ? (
+        <View style={styles.loaderWrap}>
+          <LottieLoader size={44} />
+        </View>
+      ) : (
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentInner} showsVerticalScrollIndicator={false}>
+          <Animated.FlatList
+            data={FLASH_DISCOUNTS}
+            horizontal
+            keyExtractor={(item: number, i: number) => `${item}-${i}`}
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={FLASH_SNAP}
+            decelerationRate="fast"
+            style={styles.flashScroll}
+            onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: flashScrollX } } }], { useNativeDriver: true })}
+            scrollEventThrottle={16}
+            renderItem={({ item: discount, index }: { item: number; index: number }) => {
+              const inputRange = [(index - 1) * FLASH_SNAP, index * FLASH_SNAP, (index + 1) * FLASH_SNAP];
+              const scale = flashScrollX.interpolate({ inputRange, outputRange: [0.9, 1, 0.9], extrapolate: 'clamp' });
+              const opacity = flashScrollX.interpolate({ inputRange, outputRange: [0.6, 1, 0.6], extrapolate: 'clamp' });
+              const saleTag = CATEGORY_SALE_TAGS[activeCategory] || 'shopping';
+              const imageLock = activeCategory.length * 15 + index;
+
+              return (
+                <Animated.View style={[styles.flashSale, { width: FLASH_WIDTH, transform: [{ scale }], opacity }]}>
+                  <Image source={{ uri: loremflickrUri(saleTag, imageLock) }} style={styles.flashImage} resizeMode="cover" />
+                  <LinearGradient colors={['transparent', colors.navy]} locations={[0.3, 1]} style={StyleSheet.absoluteFillObject} />
+                  <View style={styles.flashTextWrap}>
+                    <Text style={styles.flashSaleEyebrow}>FLASH SALE</Text>
+                    <Text style={styles.flashSaleHeadline}>
+                      Up to {discount}% off {activeSub?.label} today
+                    </Text>
+                  </View>
+                </Animated.View>
+              );
+            }}
+          />
+
+          <View style={styles.popularHeaderRow}>
+            <Text style={styles.popularHeading}>Popular in {activeSub?.label}</Text>
+            {(filter.sort !== 'relevance' || filter.stores.length > 0) && (
+              <TouchableOpacity onPress={() => setFilter({ sort: 'relevance', stores: [] })}>
+                <Text style={styles.clearFilter}>Clear filter</Text>
+              </TouchableOpacity>
+            )}
           </View>
-        ) : (
-          <>
-            <View style={styles.sidebarContainer}>
-              <ScrollView style={styles.sidebar} showsVerticalScrollIndicator={false}>
-                {subcategories.map((sub: Subcategory, index: number) => {
-                  const active = sub.key === activeSubcategory;
-                  const badgeColor = colors.categoryPalette[index % colors.categoryPalette.length];
-                  const SubIcon = getIconForTag(sub.imageTag);
-                  return (
-                    <TouchableOpacity
-                      key={sub.key}
-                      style={[styles.subItem, active && styles.subItemActive]}
-                      activeOpacity={0.8}
-                      onPress={() => setActiveSubcategory(sub.key)}
-                    >
-                      {active && <View style={styles.subActiveBar} />}
-                      <View style={[styles.subIcon, { backgroundColor: badgeColor }]}>
-                        <SubIcon size={16} color={colors.onDarkPrimary} strokeWidth={2} />
-                      </View>
-                      <Text style={[styles.subLabel, active && styles.subLabelActive]} numberOfLines={2}>
-                        {sub.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
 
-            <ScrollView
-              style={styles.content}
-              contentContainerStyle={styles.contentInner}
-              showsVerticalScrollIndicator={false}
-            >
-              {/* Flash sale carousel */}
-              <Animated.FlatList
-                data={FLASH_DISCOUNTS}
-                horizontal
-                keyExtractor={(item: number, i: number) => `${item}-${i}`}
-                showsHorizontalScrollIndicator={false}
-                snapToInterval={FLASH_SNAP}
-                decelerationRate="fast"
-                style={styles.flashScroll}
-                onScroll={Animated.event(
-                  [{ nativeEvent: { contentOffset: { x: flashScrollX } } }],
-                  { useNativeDriver: true }
-                )}
-                scrollEventThrottle={16}
-                renderItem={({ item: discount, index }: { item: number; index: number }) => {
-                  const inputRange = [
-                    (index - 1) * FLASH_SNAP,
-                    index * FLASH_SNAP,
-                    (index + 1) * FLASH_SNAP,
-                  ];
-                  const scale = flashScrollX.interpolate({ inputRange, outputRange: [0.9, 1, 0.9], extrapolate: 'clamp' });
-                  const opacity = flashScrollX.interpolate({ inputRange, outputRange: [0.6, 1, 0.6], extrapolate: 'clamp' });
-                  const saleTag = CATEGORY_SALE_TAGS[activeCategory] || 'shopping';
-                  const imageLock = activeCategory.length * 15 + index;
+          <View style={styles.productGrid}>
+            {filteredProducts.map((product: SubcategoryProduct, i: number) => (
+              <TouchableOpacity
+                key={product.name}
+                style={styles.productCard}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('ProductDetail', { productName: product.name, currentPrice: product.price })}
+              >
+                <View style={styles.productImageWrap}>
+                  <Image
+                    source={{ uri: loremflickrUri(product.pictureTag || activeSub?.imageTag || 'product', i + 1) }}
+                    style={styles.productImage}
+                    resizeMode="cover"
+                  />
+                </View>
+                <Text style={styles.productName} numberOfLines={1}>{product.name}</Text>
+                <Text style={styles.productPrice}>{product.price}</Text>
+              </TouchableOpacity>
+            ))}
+            {filteredProducts.length === 0 && (
+              <Text style={styles.emptyText}>No products match this filter.</Text>
+            )}
+          </View>
+        </ScrollView>
+      )}
 
-                  return (
-                    <Animated.View
-                      style={[styles.flashSale, { width: FLASH_WIDTH, transform: [{ scale }], opacity }]}
-                    >
-                      <Image
-                        source={{ uri: loremflickrUri(saleTag, imageLock) }}
-                        style={styles.flashImage}
-                        resizeMode="cover"
-                      />
-                      <LinearGradient
-                        colors={['transparent', colors.navy]}
-                        locations={[0.3, 1]}
-                        style={StyleSheet.absoluteFillObject}
-                      />
-                      <View style={styles.flashTextWrap}>
-                        <Text style={styles.flashSaleEyebrow}>FLASH SALE</Text>
-                        <Text style={styles.flashSaleHeadline}>
-                          Up to {discount}% off {activeSub?.label} today
-                        </Text>
-                      </View>
-                    </Animated.View>
-                  );
-                }}
-              />
-
-              <Text style={styles.popularHeading}>Popular in {activeSub?.label}</Text>
-
-              <View style={styles.productGrid}>
-                {activeSub?.products.map((product: SubcategoryProduct, i: number) => {
-                  return (
-                    <TouchableOpacity key={product.name} style={styles.productCard} activeOpacity={0.85}>
-                      <View style={[styles.productImageWrap, { backgroundColor: PRODUCT_TINTS[i % PRODUCT_TINTS.length] }]}>
-                        <Image
-                          source={{ uri: loremflickrUri(product.pictureTag || activeSub?.imageTag || 'product', i + 1) }}
-                          style={styles.productImage}
-                          resizeMode="cover"
-                        />
-                      </View>
-                      <Text style={styles.productName} numberOfLines={1}>{product.name}</Text>
-                      <Text style={styles.productPrice}>{product.price}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </ScrollView>
-          </>
-        )}
-      </View>
+      <FilterSheet
+        visible={filterVisible}
+        value={filter}
+        onChange={setFilter}
+        onClose={() => setFilterVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -425,14 +429,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     gap: 12,
-  },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: radii.small,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   headerTitle: {
     flex: 1,
@@ -449,8 +445,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  searchRow: { paddingHorizontal: 16, paddingVertical: 10 },
+  searchRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingVertical: 10 },
   searchBar: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -462,6 +459,14 @@ const styles = StyleSheet.create({
     height: 44,
   },
   searchInput: { flex: 1, fontFamily: fonts.body, fontSize: 14, color: colors.textPrimary, padding: 0 },
+  filterBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.medium,
+    backgroundColor: colors.accentTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   tabScroll: { marginBottom: 10, flexGrow: 0 },
   tabScrollContent: { paddingHorizontal: 16 },
@@ -478,54 +483,38 @@ const styles = StyleSheet.create({
   tabLabel: { fontSize: 13, fontFamily: fonts.label, color: colors.textSecondary },
   tabLabelActive: { color: colors.onDarkPrimary },
 
-  body: { flex: 1, flexDirection: 'row' },
-
-  sidebarContainer: { width: SIDEBAR_WIDTH, backgroundColor: colors.accentTint },
-  sidebar: { flex: 1 },
-  subItem: { alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4 },
-  subItemActive: { backgroundColor: colors.surface },
-  subActiveBar: {
-    position: 'absolute',
-    left: 0,
-    top: 8,
-    bottom: 8,
-    width: 3,
-    borderRadius: 2,
-    backgroundColor: colors.accentSolid,
-  },
+  subScroll: { marginBottom: 14, flexGrow: 0 },
+  subScrollContent: { paddingHorizontal: 16, gap: 16 },
+  subItem: { alignItems: 'center', width: 64 },
   subIcon: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: radii.medium,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
-  subLabel: { fontSize: 9.5, fontFamily: fonts.body, color: colors.textSecondary, textAlign: 'center' },
+  subIconActive: { borderColor: colors.accentSolid },
+  subLabel: { fontSize: 10.5, fontFamily: fonts.body, color: colors.textSecondary, textAlign: 'center' },
   subLabelActive: { color: colors.textPrimary, fontFamily: fonts.label },
+
+  loaderWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   content: { flex: 1 },
   contentInner: { padding: 16, paddingBottom: 32 },
 
   flashScroll: { marginBottom: 18, flexGrow: 0 },
-  flashSale: { borderRadius: radii.medium, marginRight: 10, overflow: 'hidden', height: 100 },
+  flashSale: { borderRadius: radii.medium, marginRight: 10, overflow: 'hidden', height: 110 },
   flashImage: { ...StyleSheet.absoluteFillObject },
   flashTextWrap: { flex: 1, justifyContent: 'flex-end', padding: 14 },
-  flashSaleEyebrow: {
-    fontSize: 11,
-    fontFamily: fonts.button,
-    color: colors.accentMango,
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
+  flashSaleEyebrow: { fontSize: 11, fontFamily: fonts.button, color: colors.accentMango, letterSpacing: 1, marginBottom: 4 },
   flashSaleHeadline: { fontSize: 14, fontFamily: fonts.label, color: colors.onDarkPrimary },
 
-  popularHeading: {
-    fontSize: 18,
-    fontFamily: fonts.headlineBold,
-    color: colors.textPrimary,
-    marginBottom: 12,
-  },
+  popularHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  popularHeading: { fontSize: 18, fontFamily: fonts.headlineBold, color: colors.textPrimary },
+  clearFilter: { fontSize: 12, fontFamily: fonts.button, color: colors.accentSolid },
 
   productGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   productCard: {
@@ -538,17 +527,15 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   productImageWrap: {
-    height: 90,
+    height: 110,
     borderRadius: radii.small,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
     overflow: 'hidden',
   },
-  productImage: {
-    width: '100%',
-    height: '100%',
-  },
+  productImage: { width: '100%', height: '100%' },
   productName: { fontSize: 13, fontFamily: fonts.body, color: colors.textSecondary, marginBottom: 3 },
   productPrice: { fontSize: 15, fontFamily: fonts.monoEmphasis, color: colors.textPrimary },
+  emptyText: { fontSize: 13, fontFamily: fonts.body, color: colors.textTertiary, paddingVertical: 24, textAlign: 'center', width: '100%' },
 });

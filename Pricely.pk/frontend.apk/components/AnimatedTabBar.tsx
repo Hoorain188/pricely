@@ -1,15 +1,20 @@
 import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Animated, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { House, Heart, Bell, User } from 'lucide-react-native';
+import { User } from 'lucide-react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import LottieToggleIcon from './LottieToggleIcon';
+import homeJson from '../../assets/Lottie/Home.json';
+import heartJson from '../../assets/Lottie/Heart.json';
+import bellJson from '../../assets/Lottie/Bell.json';
 import { colors, fonts } from '../theme/colors';
 
-const ICONS: Record<string, typeof House> = {
-  Home: House,
-  Favorites: Heart,
-  Alerts: Bell,
-  Account: User,
+// Lottie source per route name — Account has no custom asset yet, so it
+// stays on the plain lucide User icon (see the fallback in TabItem below).
+const LOTTIE_ICONS: Record<string, any> = {
+  Home: homeJson,
+  Favorites: heartJson,
+  Alerts: bellJson,
 };
 
 const ACTIVE_COLOR = colors.accentSolid;
@@ -22,11 +27,10 @@ export default function AnimatedTabBar({ state, descriptors, navigation }: Botto
     <View style={[styles.menu, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       {state.routes
         .map((route, idx) => ({ route, originalIndex: idx }))
-        .filter(({ route }) => route.name !== 'Category')
+        .filter(({ route }) => route.name !== 'Category' && route.name !== 'ProductDetail')
         .map(({ route, originalIndex }) => {
           const { options } = descriptors[route.key];
           const isFocused = state.index === originalIndex;
-          const Icon = ICONS[route.name] ?? House;
           const label = (options.tabBarLabel as string) ?? options.title ?? route.name;
 
           const onPress = () => {
@@ -39,8 +43,8 @@ export default function AnimatedTabBar({ state, descriptors, navigation }: Botto
           return (
             <TabItem
               key={route.key}
+              routeName={route.name}
               label={label}
-              Icon={Icon}
               isActive={isFocused}
               onPress={onPress}
             />
@@ -51,13 +55,13 @@ export default function AnimatedTabBar({ state, descriptors, navigation }: Botto
 }
 
 function TabItem({
+  routeName,
   label,
-  Icon,
   isActive,
   onPress,
 }: {
+  routeName: string;
   label: string;
-  Icon: typeof House;
   isActive: boolean;
   onPress: () => void;
 }) {
@@ -65,6 +69,7 @@ function TabItem({
   const translateY = useRef(new Animated.Value(0)).current;
   const glowOpacity = useRef(new Animated.Value(0)).current;
   const dotScale = useRef(new Animated.Value(0)).current;
+  const lottieSource = LOTTIE_ICONS[routeName];
 
   useEffect(() => {
     Animated.parallel([
@@ -89,7 +94,21 @@ function TabItem({
           ]}
         />
         <Animated.View style={[styles.iconContainer, { transform: [{ translateY }, { scale }] }]}>
-          <Icon size={22} color={isActive ? ACTIVE_COLOR : INACTIVE_COLOR} strokeWidth={isActive ? 2.5 : 2} />
+          {lottieSource ? (
+            <LottieToggleIcon
+              source={lottieSource}
+              active={isActive}
+              size={24}
+              colorFilters={[
+                { keypath: 'home', color: isActive ? ACTIVE_COLOR : INACTIVE_COLOR },
+                { keypath: 'heart', color: isActive ? ACTIVE_COLOR : INACTIVE_COLOR },
+                { keypath: 'heart Fill', color: isActive ? ACTIVE_COLOR : INACTIVE_COLOR },
+                { keypath: 'bell', color: isActive ? ACTIVE_COLOR : INACTIVE_COLOR },
+              ]}
+            />
+          ) : (
+            <User size={22} color={isActive ? ACTIVE_COLOR : INACTIVE_COLOR} strokeWidth={isActive ? 2.5 : 2} />
+          )}
         </Animated.View>
       </View>
 

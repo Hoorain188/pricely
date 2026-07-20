@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, TextInput, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, TextInput, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Smartphone, Headphones, HardDrive, Bell } from 'lucide-react-native';
-import { colors, fonts, radii, shadows } from '../theme/colors';
+import { colors, fonts, radii, shadows, gradients } from '../theme/colors';
+import { LinearGradient } from 'expo-linear-gradient';
 import Sidebar from '../components/Sidebar';
 import LottieHamburger from '../components/LottieHamburger';
+import LottieBackButton from '../components/Lottiebackbutton';
 import { useUserStore } from '../context/UserStore';
+import CustomAlertDialog from '../components/CustomAlertDialog';
 
 const getIcon = (name: string) => {
   const lower = name.toLowerCase();
@@ -26,6 +29,12 @@ export default function AlertsScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
 
+  // Custom alert dialog states
+  const [saveSuccessVisible, setSaveSuccessVisible] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [errorVisible, setErrorVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
   // Form states
   const [newProductName, setNewProductName] = useState('');
   const [newCurrentPrice, setNewCurrentPrice] = useState('');
@@ -33,15 +42,18 @@ export default function AlertsScreen() {
 
   const handleCreateAlert = () => {
     if (!newProductName.trim()) {
-      Alert.alert('Error', 'Product name is required');
+      setErrorMessage('Product name is required');
+      setErrorVisible(true);
       return;
     }
     if (!newCurrentPrice.trim()) {
-      Alert.alert('Error', 'Current price is required');
+      setErrorMessage('Current price is required');
+      setErrorVisible(true);
       return;
     }
     if (!newTargetPrice.trim()) {
-      Alert.alert('Error', 'Target price is required');
+      setErrorMessage('Target price is required');
+      setErrorVisible(true);
       return;
     }
 
@@ -55,14 +67,23 @@ export default function AlertsScreen() {
     setNewProductName('');
     setNewCurrentPrice('');
     setNewTargetPrice('');
-    Alert.alert('Alert Set Success', `You will be notified for price drops on ${newProductName}!`);
+    setSuccessMessage(`You will be notified for price drops on ${newProductName}!`);
+    setSaveSuccessVisible(true);
   };
 
   return (
     <>
       <SafeAreaView style={styles.root} edges={['top']}>
         {/* Header */}
-        <View style={styles.header}>
+        <LinearGradient
+          colors={gradients.primary}
+          locations={gradients.primaryLocations}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.header}
+        >
+          <LottieBackButton onPress={() => navigation.navigate('Home')} size={30} />
+          <Text style={styles.headerTitle}>Price alerts</Text>
           <TouchableOpacity
             style={styles.menuButton}
             activeOpacity={0.8}
@@ -70,22 +91,29 @@ export default function AlertsScreen() {
           >
             <LottieHamburger isOpen={menuOpen} size={22} />
           </TouchableOpacity>
-          <Text style={styles.title}>Price alerts</Text>
+        </LinearGradient>
+
+        <ScrollView contentContainerStyle={styles.scrollList} showsVerticalScrollIndicator={false}>
+          {/* Add Price Alert Button below header */}
           <TouchableOpacity
-            style={styles.addButton}
+            style={styles.contentAddButton}
             activeOpacity={0.85}
             onPress={() => setModalVisible(true)}
           >
-            <Ionicons name="add" size={24} color="#FFFFFF" />
+            <Ionicons name="add" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.contentAddButtonText}>Add New Price Alert</Text>
           </TouchableOpacity>
-        </View>
 
-        <ScrollView contentContainerStyle={styles.scrollList} showsVerticalScrollIndicator={false}>
           {alerts.map((item) => {
+            const isMet = item.remainingPrice.toLowerCase().includes('target') || item.remainingPrice.toLowerCase().includes('reached');
             return (
               <TouchableOpacity
                 key={item.id}
-                style={[styles.card, item.remainingPrice.includes('Target') && styles.cardHighlighted, !item.active && styles.cardInactive]}
+                style={[
+                  styles.card, 
+                  isMet && styles.cardHighlighted, 
+                  !item.active && styles.cardInactive
+                ]}
                 activeOpacity={0.9}
                 onPress={() => navigation.navigate('ProductDetail', { productName: item.name, currentPrice: item.currentPrice })}
               >
@@ -117,7 +145,12 @@ export default function AlertsScreen() {
                   <Text style={styles.currentPriceText}>
                     Current: <Text style={styles.priceHighlight}>{item.currentPrice}</Text>
                   </Text>
-                  <Text style={styles.remainingText}>{item.remainingPrice}</Text>
+                  <Text style={[
+                    styles.remainingText,
+                    isMet && styles.remainingTextReached
+                  ]}>
+                    {item.remainingPrice}
+                  </Text>
                 </View>
               </TouchableOpacity>
             );
@@ -212,6 +245,26 @@ export default function AlertsScreen() {
           else if (dest === 'Settings') navigation.navigate('Settings');
         }}
       />
+
+      <CustomAlertDialog
+        visible={saveSuccessVisible}
+        title="Success"
+        message={successMessage}
+        confirmText="OK"
+        onConfirm={() => setSaveSuccessVisible(false)}
+        onCancel={() => setSaveSuccessVisible(false)}
+        type="success"
+      />
+
+      <CustomAlertDialog
+        visible={errorVisible}
+        title="Error"
+        message={errorMessage}
+        confirmText="OK"
+        onConfirm={() => setErrorVisible(false)}
+        onCancel={() => setErrorVisible(false)}
+        type="danger"
+      />
     </>
   );
 }
@@ -224,31 +277,39 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 12,
+    gap: 12,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontFamily: fonts.headlineBold,
+    color: colors.onDarkPrimary,
+    textAlign: 'center',
   },
   menuButton: {
-    width: 44,
-    height: 44,
+    width: 36,
+    height: 36,
     borderRadius: radii.small,
-    backgroundColor: colors.textPrimary,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  title: {
-    fontSize: 24,
-    fontFamily: fonts.headlineBold,
-    color: colors.textPrimary,
-  },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radii.small,
+  contentAddButton: {
     backgroundColor: '#0E6B4F',
+    borderRadius: radii.medium,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 14,
+    marginVertical: 10,
     ...shadows.button,
+  },
+  contentAddButtonText: {
+    color: '#FFFFFF',
+    fontFamily: fonts.button,
+    fontSize: 15,
   },
   scrollList: {
     paddingHorizontal: 20,
@@ -319,6 +380,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: fonts.body,
     color: colors.textSecondary,
+  },
+  remainingTextReached: {
+    color: '#D97706',
+    fontFamily: fonts.headlineBold,
   },
   targetReachedCard: {
     flexDirection: 'row',

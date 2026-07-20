@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, TextInput, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { colors, fonts, radii, shadows } from '../theme/colors';
+import { colors, fonts, radii, shadows, gradients } from '../theme/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore } from '../context/AuthContext';
 import Sidebar from '../components/Sidebar';
 import LottieHamburger from '../components/LottieHamburger';
+import LottieBackButton from '../components/Lottiebackbutton';
 import { useUserStore } from '../context/UserStore';
+import CustomAlertDialog from '../components/CustomAlertDialog';
 
 const AVATAR_PRESETS = [
   'https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=150&auto=format&fit=crop',
@@ -24,14 +26,21 @@ export default function ProfileScreen() {
   const { favorites, alerts } = useUserStore();
   
   const [menuOpen, setMenuOpen] = useState(false);
-  const [pushNotifications, setPushNotifications] = useState(true);
   
+  // Custom dialogs visibility
+  const [logoutDialogVisible, setLogoutDialogVisible] = useState(false);
+  const [saveSuccessVisible, setSaveSuccessVisible] = useState(false);
+  const [errorVisible, setErrorVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
   // Modal visibility
   const [editModalVisible, setEditModalVisible] = useState(false);
 
   // Edit profile states
-  const [editName, setEditName] = useState(user?.name || 'Amina Raza');
-  const [editEmail, setEditEmail] = useState(user?.email || 'amina.raza@gmail.com');
+  const [editName, setEditName] = useState(user?.name || 'Samad Satti');
+  const [editEmail, setEditEmail] = useState(user?.email || 'sattisamad0@gmail.com');
+  const [editPhone, setEditPhone] = useState(user?.phone || '03460524355');
+  const [editLocation, setEditLocation] = useState(user?.location || 'Rawalpindi, Pakistan');
   const [editPassword, setEditPassword] = useState(user?.password || '••••••••');
   const [selectedAvatar, setSelectedAvatar] = useState(user?.avatar || '');
 
@@ -39,13 +48,17 @@ export default function ProfileScreen() {
     ? user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase() 
     : 'AR';
   
-  const name = user?.name || 'Amina Raza';
-  const email = user?.email || 'amina.raza@gmail.com';
+  const name = user?.name || 'Samad Satti';
+  const email = user?.email || 'sattisamad0@gmail.com';
+  const phone = user?.phone || '03460524355';
+  const location = user?.location || 'Rawalpindi, Pakistan';
 
   useEffect(() => {
     if (route.params?.openEditProfile) {
       setEditName(name);
       setEditEmail(email);
+      setEditPhone(phone);
+      setEditLocation(location);
       setEditPassword(user?.password || '••••••••');
       setSelectedAvatar(user?.avatar || '');
       setEditModalVisible(true);
@@ -61,11 +74,13 @@ export default function ProfileScreen() {
 
   const handleSaveProfile = async () => {
     if (!editName.trim()) {
-      Alert.alert('Error', 'Name cannot be empty');
+      setErrorMessage('Full Name is required');
+      setErrorVisible(true);
       return;
     }
     if (!editEmail.trim()) {
-      Alert.alert('Error', 'Email cannot be empty');
+      setErrorMessage('Email address is required');
+      setErrorVisible(true);
       return;
     }
 
@@ -75,15 +90,18 @@ export default function ProfileScreen() {
           id: user?.id || '1', 
           name: editName, 
           email: editEmail, 
+          phone: editPhone,
+          location: editLocation,
           password: editPassword !== '••••••••' ? editPassword : user?.password,
           avatar: selectedAvatar 
         },
         token || 'mock-jwt-token'
       );
       setEditModalVisible(false);
-      Alert.alert('Success', 'Profile updated successfully!');
+      setSaveSuccessVisible(true);
     } catch (error) {
-      Alert.alert('Error', 'Failed to update profile');
+      setErrorMessage('Failed to update profile');
+      setErrorVisible(true);
     }
   };
 
@@ -91,7 +109,15 @@ export default function ProfileScreen() {
     <>
       <SafeAreaView style={styles.root} edges={['top']}>
         {/* Top Header menu trigger */}
-        <View style={styles.topHeader}>
+        <LinearGradient
+          colors={gradients.primary}
+          locations={gradients.primaryLocations}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.header}
+        >
+          <LottieBackButton onPress={() => navigation.navigate('Home')} size={30} />
+          <Text style={styles.headerTitle}>My Account</Text>
           <TouchableOpacity
             style={styles.menuButton}
             activeOpacity={0.8}
@@ -99,7 +125,7 @@ export default function ProfileScreen() {
           >
             <LottieHamburger isOpen={menuOpen} size={22} />
           </TouchableOpacity>
-        </View>
+        </LinearGradient>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* Avatar and Name */}
@@ -124,6 +150,8 @@ export default function ProfileScreen() {
                 onPress={() => {
                   setEditName(name);
                   setEditEmail(email);
+                  setEditPhone(phone);
+                  setEditLocation(location);
                   setEditPassword(user?.password || '••••••••');
                   setSelectedAvatar(user?.avatar || '');
                   setEditModalVisible(true);
@@ -157,34 +185,29 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* Preferences Section */}
-          <Text style={styles.sectionHeader}>Preferences</Text>
+          {/* Personal Information Section */}
+          <Text style={styles.sectionHeader}>Personal Information</Text>
           <View style={styles.optionsBlock}>
             <View style={styles.optionRow}>
-              <Text style={styles.optionLabel}>Push notifications</Text>
-              <Switch
-                value={pushNotifications}
-                onValueChange={setPushNotifications}
-                trackColor={{ false: '#767577', true: '#0E6B4F' }}
-                thumbColor={pushNotifications ? '#FFFFFF' : '#f4f3f4'}
-              />
+              <Text style={styles.optionLabel}>Full Name</Text>
+              <Text style={styles.optionValue}>{name}</Text>
             </View>
-            <TouchableOpacity style={styles.optionRow} onPress={() => navigation.navigate('Settings')}>
-              <Text style={styles.optionLabel}>Currency & Region</Text>
-              <Text style={styles.optionValue}>PKR (Rs) ›</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.optionRow} onPress={() => navigation.navigate('Settings')}>
-              <Text style={styles.optionLabel}>App Theme</Text>
-              <Text style={styles.optionValue}>System ›</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.optionRow} onPress={() => navigation.navigate('Settings')}>
-              <Text style={styles.optionLabel}>Default Sorting</Text>
-              <Text style={styles.optionValue}>Lowest price ›</Text>
-            </TouchableOpacity>
+            <View style={styles.optionRow}>
+              <Text style={styles.optionLabel}>Email Address</Text>
+              <Text style={styles.optionValue}>{email}</Text>
+            </View>
+            <View style={styles.optionRow}>
+              <Text style={styles.optionLabel}>Phone Number</Text>
+              <Text style={styles.optionValue}>{phone}</Text>
+            </View>
+            <View style={styles.optionRow}>
+              <Text style={styles.optionLabel}>Location</Text>
+              <Text style={styles.optionValue}>{location}</Text>
+            </View>
           </View>
 
           {/* Log out Button */}
-          <TouchableOpacity style={styles.logoutButton} onPress={clearAuth}>
+          <TouchableOpacity style={styles.logoutButton} onPress={() => setLogoutDialogVisible(true)}>
             <Text style={styles.logoutText}>Log out</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -200,70 +223,121 @@ export default function ProfileScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Edit Profile</Text>
-
-            <Text style={styles.inputLabel}>Choose Profile Picture</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
-              <TouchableOpacity
-                style={[styles.presetItem, !selectedAvatar && styles.presetItemActive]}
-                onPress={() => setSelectedAvatar('')}
-              >
-                <View style={styles.avatarInitialsFallback}>
-                  <Text style={styles.avatarInitialsText}>{initials}</Text>
-                </View>
-              </TouchableOpacity>
-              {AVATAR_PRESETS.map((preset, idx) => (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.inputLabel}>Choose Profile Picture</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
                 <TouchableOpacity
-                  key={idx}
-                  style={[styles.presetItem, selectedAvatar === preset && styles.presetItemActive]}
-                  onPress={() => setSelectedAvatar(preset)}
+                  style={[styles.presetItem, !selectedAvatar && styles.presetItemActive]}
+                  onPress={() => setSelectedAvatar('')}
                 >
-                  <Image source={{ uri: preset }} style={styles.presetImage} />
+                  <View style={styles.avatarInitialsFallback}>
+                    <Text style={styles.avatarInitialsText}>{initials}</Text>
+                  </View>
                 </TouchableOpacity>
-              ))}
+                {AVATAR_PRESETS.map((preset, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[styles.presetItem, selectedAvatar === preset && styles.presetItemActive]}
+                    onPress={() => setSelectedAvatar(preset)}
+                  >
+                    <Image source={{ uri: preset }} style={styles.presetImage} />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.inputLabel}>Full Name</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editName}
+                onChangeText={setEditName}
+              />
+
+              <Text style={styles.inputLabel}>Email Address</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editEmail}
+                onChangeText={setEditEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.inputLabel}>Phone Number</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editPhone}
+                onChangeText={setEditPhone}
+                keyboardType="phone-pad"
+              />
+
+              <Text style={styles.inputLabel}>Location</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editLocation}
+                onChangeText={setEditLocation}
+              />
+
+              <Text style={styles.inputLabel}>New Password</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editPassword}
+                onChangeText={setEditPassword}
+                secureTextEntry
+                autoCapitalize="none"
+              />
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={() => setEditModalVisible(false)}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.saveButton]}
+                  onPress={handleSaveProfile}
+                >
+                  <Text style={styles.saveButtonText}>Save</Text>
+                </TouchableOpacity>
+              </View>
             </ScrollView>
-
-            <Text style={styles.inputLabel}>Full Name</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editName}
-              onChangeText={setEditName}
-            />
-
-            <Text style={styles.inputLabel}>Email Address</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editEmail}
-              onChangeText={setEditEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-
-            <Text style={styles.inputLabel}>New Password</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editPassword}
-              onChangeText={setEditPassword}
-              secureTextEntry
-              autoCapitalize="none"
-            />
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setEditModalVisible(false)}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={handleSaveProfile}
-              >
-                <Text style={styles.saveButtonText}>Save</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
       </Modal>
+
+      {/* Premium custom alert dialogs */}
+      <CustomAlertDialog
+        visible={logoutDialogVisible}
+        title="Log out"
+        message="Are you sure you want to log out of your account?"
+        confirmText="Log out"
+        cancelText="Cancel"
+        type="danger"
+        onConfirm={async () => {
+          setLogoutDialogVisible(false);
+          await clearAuth();
+        }}
+        onCancel={() => setLogoutDialogVisible(false)}
+      />
+
+      <CustomAlertDialog
+        visible={saveSuccessVisible}
+        title="Success"
+        message="Your profile has been updated successfully!"
+        confirmText="OK"
+        onConfirm={() => setSaveSuccessVisible(false)}
+        onCancel={() => setSaveSuccessVisible(false)}
+        type="success"
+      />
+
+      <CustomAlertDialog
+        visible={errorVisible}
+        title="Error"
+        message={errorMessage}
+        confirmText="OK"
+        onConfirm={() => setErrorVisible(false)}
+        onCancel={() => setErrorVisible(false)}
+        type="danger"
+      />
 
       <Sidebar
         visible={menuOpen}
@@ -285,22 +359,32 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  topHeader: {
-    paddingHorizontal: 20,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    alignItems: 'flex-end',
+    gap: 12,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontFamily: fonts.headlineBold,
+    color: colors.onDarkPrimary,
+    textAlign: 'center',
   },
   menuButton: {
-    width: 44,
-    height: 44,
+    width: 36,
+    height: 36,
     borderRadius: radii.small,
-    backgroundColor: colors.textPrimary,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   scrollContent: {
     paddingHorizontal: 20,
     paddingBottom: 40,
+    paddingTop: 20,
   },
   avatarSection: {
     flexDirection: 'row',
@@ -421,7 +505,7 @@ const styles = StyleSheet.create({
   },
   optionLabel: {
     fontSize: 15,
-    fontFamily: fonts.body,
+    fontFamily: fonts.label,
     color: colors.textPrimary,
   },
   optionValue: {
@@ -457,6 +541,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.medium,
     padding: 20,
     ...shadows.card,
+    maxHeight: '90%',
   },
   modalTitle: {
     fontSize: 20,
@@ -488,7 +573,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
-    marginTop: 8,
+    marginTop: 16,
+    marginBottom: 10,
   },
   modalButton: {
     flex: 1,

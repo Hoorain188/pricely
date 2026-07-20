@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import {
   SlidersHorizontal,
   Smartphone,
@@ -208,9 +209,24 @@ export default function CategoryScreen() {
   const { categories } = useCategories();
   const [activeCategory, setActiveCategory] = useState(initialCategory);
   const { subcategories, loading } = useSubcategories(activeCategory);
+  
+  // Transition loading logic to eliminate flash of empty grids
+  const [localLoading, setLocalLoading] = useState(false);
+
+  useEffect(() => {
+    setLocalLoading(true);
+  }, [activeCategory]);
+
+  useEffect(() => {
+    if (!loading) {
+      setLocalLoading(false);
+    }
+  }, [loading]);
+
+  const isPageLoading = loading || localLoading;
+
   const [activeSubcategory, setActiveSubcategory] = useState('');
   const [searchValue, setSearchValue] = useState('');
-  const [favorite, setFavorite] = useState(false);
   const [filterVisible, setFilterVisible] = useState(false);
   const [filter, setFilter] = useState<FilterState>({ sort: 'relevance', stores: [] });
   const flashScrollX = useRef(new Animated.Value(0)).current;
@@ -252,23 +268,15 @@ export default function CategoryScreen() {
       >
         <LottieBackButton onPress={() => navigation.goBack()} size={30} />
         <Text style={styles.headerTitle}>{categoryLabel}</Text>
-        <TouchableOpacity style={styles.favButton} activeOpacity={0.8} onPress={() => setFavorite((f) => !f)}>
-          <LottieToggleIcon
-            source={heartJson}
-            active={favorite}
-            size={22}
-            colorFilters={[
-              { keypath: 'heart', color: colors.onDarkPrimary },
-              { keypath: 'heart Fill', color: colors.onDarkPrimary },
-            ]}
-          />
+        <TouchableOpacity style={styles.favButton} activeOpacity={0.8} onPress={() => navigation.navigate('Favorites')}>
+          <Ionicons name="heart" size={22} color={colors.onDarkPrimary} />
         </TouchableOpacity>
       </LinearGradient>
 
       {/* Search + filter */}
       <View style={styles.searchRow}>
         <View style={styles.searchBar}>
-          <LottieSearchIcon active={searchValue.length > 0} size={18} color={colors.textTertiary} />
+          <LottieSearchIcon active={searchValue.length > 0} size={22} color={colors.textPrimary} />
           <TextInput
             value={searchValue}
             onChangeText={setSearchValue}
@@ -307,7 +315,7 @@ export default function CategoryScreen() {
       </ScrollView>
 
       {/* Subcategories */}
-      {!loading && subcategories.length > 0 && (
+      {!isPageLoading && subcategories.length > 0 && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -338,7 +346,7 @@ export default function CategoryScreen() {
       )}
 
       {/* Content */}
-      {loading ? (
+      {isPageLoading ? (
         <View style={styles.loaderWrap}>
           <LottieLoader size={44} />
         </View>

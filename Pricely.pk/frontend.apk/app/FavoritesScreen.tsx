@@ -4,9 +4,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Heart, Smartphone } from 'lucide-react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, radii, shadows } from '../theme/colors';
+import { colors, fonts, radii, shadows, gradients } from '../theme/colors';
+import { LinearGradient } from 'expo-linear-gradient';
 import Sidebar from '../components/Sidebar';
 import LottieHamburger from '../components/LottieHamburger';
+import LottieBackButton from '../components/Lottiebackbutton';
 import { useUserStore } from '../context/UserStore';
 
 export default function FavoritesScreen() {
@@ -25,8 +27,15 @@ export default function FavoritesScreen() {
   return (
     <>
       <SafeAreaView style={styles.root} edges={['top']}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Favorites</Text>
+        <LinearGradient
+          colors={gradients.primary}
+          locations={gradients.primaryLocations}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.header}
+        >
+          <LottieBackButton onPress={() => navigation.navigate('Home')} size={30} />
+          <Text style={styles.headerTitle}>Favorites</Text>
           <TouchableOpacity
             style={styles.menuButton}
             activeOpacity={0.8}
@@ -34,7 +43,7 @@ export default function FavoritesScreen() {
           >
             <LottieHamburger isOpen={menuOpen} size={22} />
           </TouchableOpacity>
-        </View>
+        </LinearGradient>
 
         {/* Tab Filters */}
         <View style={styles.tabContainer}>
@@ -135,20 +144,22 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 12,
+    gap: 12,
   },
-  title: {
-    fontSize: 28,
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
     fontFamily: fonts.headlineBold,
-    color: colors.textPrimary,
+    color: colors.onDarkPrimary,
+    textAlign: 'center',
   },
   menuButton: {
-    width: 44,
-    height: 44,
+    width: 36,
+    height: 36,
     borderRadius: radii.small,
-    backgroundColor: colors.textPrimary,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -156,7 +167,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 20,
     gap: 12,
-    marginBottom: 20,
+    marginTop: 18,
+    marginBottom: 18,
   },
   tab: {
     paddingHorizontal: 16,

@@ -14,7 +14,7 @@ export default function LottieSearchIcon({ active, size = 20, color }: LottieSea
             source={searchToX}
             active={active}
             size={size}
-            colorFilters={color ? [{ keypath: 'search-to-x Outlines', color }] : undefined}
+            colorFilters={color ? [{ keypath: '**', color }] : undefined}
         />
     );
 }

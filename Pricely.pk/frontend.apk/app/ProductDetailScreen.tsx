@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Alert, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +8,7 @@ import { colors, fonts, radii, shadows, gradients } from '../theme/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUserStore } from '../context/UserStore';
 import LottieBackButton from '../components/Lottiebackbutton';
+import CustomAlertDialog from '../components/CustomAlertDialog';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -31,12 +32,13 @@ export default function ProductDetailScreen() {
   const [alertPrice, setAlertPrice] = useState(existingAlert ? existingAlert.targetPrice.replace(/[^0-9]/g, '') : '53000');
   const alertActive = !!existingAlert;
 
+  const [saveSuccessVisible, setSaveSuccessVisible] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+
   const handleSetAlert = () => {
     addAlert({ name: productName, targetPrice: alertPrice, currentPrice });
-    Alert.alert(
-      'Alert Set Success',
-      `We will notify you once ${productName} drops below Rs ${Number(alertPrice).toLocaleString()}`
-    );
+    setSuccessMessage(`We will notify you once ${productName} drops below Rs ${Number(alertPrice).toLocaleString()}`);
+    setSaveSuccessVisible(true);
   };
 
   const handleLike = () => {
@@ -167,6 +169,16 @@ export default function ProductDetailScreen() {
           ))}
         </View>
       </ScrollView>
+
+      <CustomAlertDialog
+        visible={saveSuccessVisible}
+        title="Alert Set Success"
+        message={successMessage}
+        confirmText="OK"
+        onConfirm={() => setSaveSuccessVisible(false)}
+        onCancel={() => setSaveSuccessVisible(false)}
+        type="success"
+      />
     </SafeAreaView>
   );
 }

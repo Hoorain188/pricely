@@ -8,6 +8,8 @@ export interface User {
   email: string;
   password?: string;
   avatar?: string;
+  phone?: string;
+  location?: string;
 }
 
 interface AuthState {

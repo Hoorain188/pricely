@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, radii, shadows, gradients } from '../theme/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import LottieBackButton from '../components/Lottiebackbutton';
+import CustomAlertDialog from '../components/CustomAlertDialog';
+import Sidebar from '../components/Sidebar';
+import LottieHamburger from '../components/LottieHamburger';
 
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
@@ -13,10 +16,11 @@ export default function SettingsScreen() {
   const [priceDrops, setPriceDrops] = useState(true);
   const [selectedTheme, setSelectedTheme] = useState<'system' | 'light' | 'dark'>('system');
   const [selectedCurrency, setSelectedCurrency] = useState<'PKR' | 'USD'>('PKR');
+  const [saveSuccessVisible, setSaveSuccessVisible] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const handleSaveSettings = () => {
-    Alert.alert('Success', 'Preferences saved successfully.');
-    navigation.goBack();
+    setSaveSuccessVisible(true);
   };
 
   return (
@@ -31,6 +35,13 @@ export default function SettingsScreen() {
       >
         <LottieBackButton onPress={() => navigation.goBack()} size={30} />
         <Text style={styles.headerTitle}>Settings</Text>
+        <TouchableOpacity
+          style={styles.menuButton}
+          activeOpacity={0.8}
+          onPress={() => setMenuOpen((o) => !o)}
+        >
+          <LottieHamburger isOpen={menuOpen} size={22} />
+        </TouchableOpacity>
       </LinearGradient>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -122,6 +133,31 @@ export default function SettingsScreen() {
           <Text style={styles.saveButtonText}>Save Preferences</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <CustomAlertDialog
+        visible={saveSuccessVisible}
+        title="Success"
+        message="Preferences saved successfully."
+        confirmText="OK"
+        onConfirm={() => {
+          setSaveSuccessVisible(false);
+          navigation.goBack();
+        }}
+        onCancel={() => setSaveSuccessVisible(false)}
+        type="success"
+      />
+
+      <Sidebar
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        onNavigate={(dest) => {
+          if (dest === 'Home') navigation.navigate('Home');
+          else if (dest === 'Favorites') navigation.navigate('Favorites');
+          else if (dest === 'Price Alerts' || dest === 'Notifications') navigation.navigate('Alerts');
+          else if (dest === 'Profile' || dest === 'Account') navigation.navigate('Account');
+          else if (dest === 'Settings') navigation.navigate('Settings');
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -143,6 +179,15 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontFamily: fonts.headlineBold,
     color: colors.onDarkPrimary,
+    textAlign: 'center',
+  },
+  menuButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.small,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrollContent: {
     paddingHorizontal: 20,

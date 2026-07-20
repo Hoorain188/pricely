@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Animated, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { House, Heart, Bell, User } from 'lucide-react-native';
+import { House, Heart, Bell, User, LayoutGrid, Copy, Users, Settings } from 'lucide-react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { colors, fonts } from '../theme/colors';
 
@@ -10,6 +10,10 @@ const ICONS: Record<string, typeof House> = {
   Favorites: Heart,
   Alerts: Bell,
   Account: User,
+  Dashboard: LayoutGrid,
+  Duplicates: Copy,
+  Users: Users,
+  Settings: Settings,
 };
 
 const ACTIVE_COLOR = colors.accentSolid;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -10,12 +10,15 @@ import FavoritesScreen from './FavoritesScreen';
 import AlertsScreen from './AlertsScreen';
 //import AccountScreen from './AccountScreen';
 import AnimatedTabBar from '../components/AnimatedTabBar';
+import AdminNavigator from './AdminNavigator';
+import { useAuthStore } from '../context/AuthContext';
 
 // This is the ONE file that decides which screen the user sees.
-//   - Not logged in  -> AuthScreen (login/signup, single-page swap)
-//   - Logged in      -> MainTabs (Home / Favorites / Alerts / Account),
-//                        rendered with AnimatedTabBar so the active icon
-//                        always matches whatever screen is actually shown.
+//   - Not logged in     -> AuthScreen (login/signup, single-page swap)
+//   - Logged in, admin  -> AdminNavigator (back-office dashboard + tools)
+//   - Logged in, user   -> MainTabs (Home / Favorites / Alerts / Account),
+//                          rendered with AnimatedTabBar so the active icon
+//                          always matches whatever screen is actually shown.
 //
 // CategoryScreen is registered as a Tab.Screen (not a separate Stack) so
 // that `navigation.navigate('Category', { categoryKey })` from HomeScreen
@@ -41,19 +44,25 @@ function MainTabs() {
 }
 
 export default function AppNavigator() {
-  // Swap this for your real auth state (context, redux, a stored token
-  // check, etc). This local flag is here so the file runs standalone.
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { user, isLoading, loadStoredAuth } = useAuthStore();
+
+  useEffect(() => {
+    loadStoredAuth();
+  }, []);
+
+  if (isLoading) return null;
 
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {isLoggedIn ? (
-          <Stack.Screen name="Main" component={MainTabs} />
-        ) : (
+        {!user ? (
           <Stack.Screen name="Auth">
-            {(props) => <AuthScreen {...props} onAuthenticated={() => setIsLoggedIn(true)} />}
+            {(props) => <AuthScreen {...props} onAuthenticated={() => {}} />}
           </Stack.Screen>
+        ) : user.role === 'admin' ? (
+          <Stack.Screen name="Admin" component={AdminNavigator} />
+        ) : (
+          <Stack.Screen name="Main" component={MainTabs} />
         )}
       </Stack.Navigator>
     </NavigationContainer>

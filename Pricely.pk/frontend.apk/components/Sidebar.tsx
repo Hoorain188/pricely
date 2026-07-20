@@ -8,7 +8,7 @@ import {
     Heart,
     User,
     Bell,
-    LifeBuoy,
+    Settings,
     LogOut,
     ChevronDown,
     X,
@@ -50,7 +50,7 @@ const MENU: {
             children: ['Profile', 'Order History', 'Settings'],
         },
         { key: 'notifications', label: 'Notifications', Icon: Bell },
-        { key: 'support', label: 'Help & Support', Icon: LifeBuoy },
+        { key: 'settings', label: 'Settings', Icon: Settings },
     ];
 
 interface AccordionRowProps {
@@ -190,7 +190,7 @@ export default function Sidebar({ visible, onClose, onNavigate, onLogout }: Side
 
                 <View style={styles.panelContent}>
                     <View style={styles.header}>
-                        <BrandMark size={30} textColor="#FFFFFF" />
+                        <BrandMark height={30} textColor="#FFFFFF" />
                         <TouchableOpacity onPress={onClose} style={styles.closeButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                             <X size={18} color="rgba(255,255,255,0.85)" />
                         </TouchableOpacity>

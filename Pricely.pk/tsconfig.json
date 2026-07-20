@@ -2,5 +2,9 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true
-  }
+  },
+  "exclude": [
+    "frontend.apk/components/Lottietoggleicon .tsx",
+    "frontend.apk/components/Lottiecheckboxfield .tsx"
+  ]
 }

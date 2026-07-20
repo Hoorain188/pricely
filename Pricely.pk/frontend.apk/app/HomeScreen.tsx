@@ -220,7 +220,12 @@ export default function HomeScreen() {
 
           <View style={styles.dealsGrid}>
             {visibleDeals.map((deal: Deal) => (
-              <View key={deal.id} style={styles.dealCard}>
+              <TouchableOpacity
+                key={deal.id}
+                style={styles.dealCard}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('ProductDetail', { productName: deal.name, currentPrice: deal.price })}
+              >
                 <Image source={{ uri: dealImageUri(deal.imageSeed) }} style={styles.dealImage} resizeMode="cover" />
                 <Text style={styles.dealName} numberOfLines={1}>
                   {deal.name}
@@ -231,7 +236,7 @@ export default function HomeScreen() {
                     ▼ {deal.discount} · {deal.store}
                   </Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         </ScrollView>
@@ -240,13 +245,17 @@ export default function HomeScreen() {
       <Sidebar
         visible={menuOpen}
         onClose={() => setMenuOpen(false)}
-        onNavigate={(destination: string) => {
-          // TODO: wire this to real navigation once the other screens exist
-          console.log('Navigate to:', destination);
+        onNavigate={(dest) => {
+          if (dest === 'Home') navigation.navigate('Home');
+          else if (dest === 'Favorites') navigation.navigate('Favorites');
+          else if (dest === 'Price Alerts' || dest === 'Notifications') navigation.navigate('Alerts');
+          else if (dest === 'Profile' || dest === 'Account') navigation.navigate('Account');
+          else if (dest === 'Settings') navigation.navigate('Settings');
         }}
-        onLogout={() => {
-          // TODO: call your real sign-out (clear token via useAuthStore, etc.)
+        onLogout={async () => {
           setMenuOpen(false);
+          const { useAuthStore } = require('../context/AuthContext');
+          await useAuthStore.getState().clearAuth();
         }}
       />
     </>

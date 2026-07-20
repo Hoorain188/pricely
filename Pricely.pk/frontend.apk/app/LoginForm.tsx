@@ -1,10 +1,10 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, Animated, StyleSheet, Easing, ViewStyle } from 'react-native';
-import { FontAwesome5 } from '@expo/vector-icons';
 import { Mail, Lock } from 'lucide-react-native';
+import { FontAwesome5 } from '@expo/vector-icons';
 import FloatingLabelInput from '../components/FloatingLabelInput';
 import GradientButton from '../components/GradientButton';
-import AnimatedCheckbox from '../components/Animatedcheckbox';
+import LottieCheckboxField from '../components/LottieCheckboxField';
 import { colors, fonts } from '../theme/colors';
 import { useAuthStore } from '../context/AuthContext';
 
@@ -128,10 +128,9 @@ const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(function LoginForm(
           </TouchableOpacity>
         </View>
 
-        {/* Whole row is tappable — text or box both toggle agree */}
-        <AnimatedCheckbox
+        <LottieCheckboxField
           checked={agree}
-          onChange={(next) => {
+          onChange={(next: boolean) => {
             setAgree(next);
             if (errors.agree) setErrors((e) => ({ ...e, agree: undefined }));
           }}
@@ -207,21 +206,6 @@ const styles = StyleSheet.create({
   socialLabel: { fontSize: 14, fontFamily: fonts.label, color: colors.textPrimary },
   switchRow: { flexDirection: 'row', justifyContent: 'center' },
   switchText: { fontSize: 14, fontFamily: fonts.body, color: colors.textSecondary },
-
-  agreeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6, paddingVertical: 2 },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-  },
-  checkboxChecked: { backgroundColor: colors.accentSolid, borderColor: colors.accentSolid },
-  checkboxError: { borderColor: colors.danger },
-  agreeText: { flex: 1, fontSize: 13, fontFamily: fonts.body, color: colors.textSecondary, lineHeight: 19 },
   checkboxErrorText: {
     fontSize: 12,
     fontFamily: fonts.body,

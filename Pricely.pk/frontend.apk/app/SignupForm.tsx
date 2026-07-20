@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Animated, StyleSheet, Easing, ViewStyle }
 import { Mail, Lock, User } from 'lucide-react-native';
 import FloatingLabelInput from '../components/FloatingLabelInput';
 import PressExpandButton from '../components/Pressexpandbutton';
-import AnimatedCheckbox from '../components/Animatedcheckbox';
+import LottieCheckboxField from '../components/LottieCheckboxField';
 import { colors, fonts } from '../theme/colors';
 
 const STEPS = 7;
@@ -141,10 +141,9 @@ const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupFor
           hint={errors.password ? undefined : '8+ characters, upper & lower case, a number, a symbol'}
         />
 
-        {/* Whole row is tappable — text or box both toggle agree */}
-        <AnimatedCheckbox
+        <LottieCheckboxField
           checked={agree}
-          onChange={(next) => {
+          onChange={(next: boolean) => {
             setAgree(next);
             if (errors.agree) setErrors((e) => ({ ...e, agree: undefined }));
           }}
@@ -201,24 +200,6 @@ const styles = StyleSheet.create({
   socialHint: { fontSize: 13, fontFamily: fonts.body, color: colors.textSecondary },
   switchRow: { flexDirection: 'row', justifyContent: 'center' },
   switchText: { fontSize: 14, fontFamily: fonts.body, color: colors.textSecondary },
-
-  // Checkbox + error are grouped tightly together, then given clear
-  // breathing room before the CTA button — so the error reads as
-  // belonging to the checkbox, not the button.
-  agreeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16, paddingVertical: 2 },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-  },
-  checkboxChecked: { backgroundColor: colors.accentSolid, borderColor: colors.accentSolid },
-  checkboxError: { borderColor: colors.danger },
-  agreeText: { flex: 1, fontSize: 13, fontFamily: fonts.body, color: colors.textSecondary, lineHeight: 19 },
   checkboxErrorText: {
     fontSize: 12,
     fontFamily: fonts.body,
@@ -226,6 +207,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 4,
     marginLeft: 30,
-    marginBottom: 14, // extra gap before the CTA button below
+    marginBottom: 14,
   },
 });

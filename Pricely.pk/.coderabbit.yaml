@@ -1,0 +1,8 @@
+language: "en-US"
+reviews:
+  auto_review:
+    enabled: true
+  profile: "chill"
+chat:
+  auto_reply: true
+  

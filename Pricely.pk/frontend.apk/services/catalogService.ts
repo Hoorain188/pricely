@@ -413,3 +413,23 @@ export async function getSubcategories(categoryKey: string): Promise<Subcategory
   // TODO: backend — GET /catalog/subcategories?category=...
   return fakeLatency(MOCK_SUBCATEGORIES[categoryKey] || MOCK_SUBCATEGORIES.electronics);
 }
+
+export async function searchProducts(query: string): Promise<SubcategoryProduct[]> {
+  const q = query.toLowerCase().trim();
+  if (!q) return fakeLatency([]);
+  const results: SubcategoryProduct[] = [];
+  const seen = new Set<string>();
+
+  Object.values(MOCK_SUBCATEGORIES).forEach((subs) => {
+    subs.forEach((sub) => {
+      sub.products.forEach((prod) => {
+        if (!seen.has(prod.name) && (prod.name.toLowerCase().includes(q) || sub.label.toLowerCase().includes(q))) {
+          seen.add(prod.name);
+          results.push(prod);
+        }
+      });
+    });
+  });
+
+  return fakeLatency(results);
+}

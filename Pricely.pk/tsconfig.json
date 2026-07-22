@@ -4,7 +4,7 @@
     "strict": true
   },
   "exclude": [
-    "frontend.apk/components/Lottietoggleicon .tsx",
-    "frontend.apk/components/Lottiecheckboxfield .tsx"
+    "frontend.apk/components/LottieToggleIcon.tsx",
+    "frontend.apk/components/LottieCheckboxField.tsx"
   ]
 }

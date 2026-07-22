@@ -4,8 +4,6 @@ import LottieView from 'lottie-react-native';
 import { colors } from '../theme/colors';
 
 const arrowLeftCircle = require('../../assets/Lottie/Arrowleftcircle.json');
-const AnimatedLottieView = Animated.createAnimatedComponent(LottieView);
-
 interface LottieBackButtonProps {
     onPress: () => void;
     size?: number;
@@ -13,26 +11,22 @@ interface LottieBackButtonProps {
 }
 
 export default function LottieBackButton({ onPress, size = 36, color = colors.onDarkPrimary }: LottieBackButtonProps) {
-    const progress = useRef(new Animated.Value(0)).current;
+    const scaleAnim = useRef(new Animated.Value(1)).current;
+    const lottieRef = useRef<LottieView>(null);
 
     useEffect(() => {
-        // Play the Lottie drawing animation on mount
-        Animated.timing(progress, {
-            toValue: 1,
-            duration: 600,
-            useNativeDriver: true,
-        }).start();
+        lottieRef.current?.play();
     }, []);
 
     const handlePressIn = () => {
-        Animated.spring(progress, {
-            toValue: 0.8,
+        Animated.spring(scaleAnim, {
+            toValue: 0.85,
             useNativeDriver: true,
         }).start();
     };
 
     const handlePressOut = () => {
-        Animated.spring(progress, {
+        Animated.spring(scaleAnim, {
             toValue: 1,
             friction: 4,
             useNativeDriver: true,
@@ -40,7 +34,7 @@ export default function LottieBackButton({ onPress, size = 36, color = colors.on
     };
 
     return (
-        <Animated.View style={{ transform: [{ scale: progress.interpolate({ inputRange: [0.8, 1], outputRange: [0.9, 1] }) }] }}>
+        <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
             <TouchableOpacity 
                 onPress={onPress} 
                 onPressIn={handlePressIn}
@@ -49,9 +43,10 @@ export default function LottieBackButton({ onPress, size = 36, color = colors.on
                 style={[styles.container, { width: size, height: size }]}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-                <AnimatedLottieView
+                <LottieView
+                    ref={lottieRef}
                     source={arrowLeftCircle}
-                    progress={progress}
+                    loop={false}
                     colorFilters={[{ keypath: '**', color }]}
                     style={{ width: '100%', height: '100%' }}
                 />

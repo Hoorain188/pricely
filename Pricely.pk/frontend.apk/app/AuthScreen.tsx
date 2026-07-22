@@ -65,7 +65,7 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   };
 
   useEffect(() => {
-    const t = setTimeout(() => refFor(mode).current?.playIn(), 30);
+    const t = setTimeout(() => refFor(mode)?.current?.playIn(), 30);
     return () => clearTimeout(t);
   }, [mode]);
 
@@ -74,7 +74,7 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.brandMarkWrap}>
-            <BrandMark size={40} animate />
+            <BrandMark height={40} />
           </View>
 
           {/* Role selector sits between the Pricely logo and the

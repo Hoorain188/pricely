@@ -12,6 +12,7 @@ import ProfileScreen from './ProfileScreen';
 import ProductDetailScreen from './ProductDetailScreen';
 import SettingsScreen from './SettingsScreen';
 import HelpSupportScreen from './HelpSupportScreen';
+import SearchScreen from './SearchScreen';
 import AnimatedTabBar from '../components/AnimatedTabBar';
 import { useAuthStore } from '../context/AuthContext';
 
@@ -30,6 +31,7 @@ function MainTabs() {
       <Tab.Screen name="Alerts" component={AlertsScreen} />
       <Tab.Screen name="Account" component={ProfileScreen} />
       <Tab.Screen name="ProductDetail" component={ProductDetailScreen} />
+      <Tab.Screen name="Search" component={SearchScreen} />
     </Tab.Navigator>
   );
 }
@@ -53,6 +55,7 @@ export default function AppNavigator() {
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
+            <Stack.Screen name="Search" component={SearchScreen} />
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthScreen} />

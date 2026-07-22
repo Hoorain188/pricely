@@ -27,7 +27,7 @@ export default function AnimatedTabBar({ state, descriptors, navigation }: Botto
     <View style={[styles.menu, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       {state.routes
         .map((route, idx) => ({ route, originalIndex: idx }))
-        .filter(({ route }) => route.name !== 'Category' && route.name !== 'ProductDetail')
+        .filter(({ route }) => route.name !== 'Category' && route.name !== 'ProductDetail' && route.name !== 'Search')
         .map(({ route, originalIndex }) => {
           const { options } = descriptors[route.key];
           const isFocused = state.index === originalIndex;

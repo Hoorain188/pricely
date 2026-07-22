@@ -239,10 +239,16 @@ export default function AlertsScreen() {
         onClose={() => setMenuOpen(false)}
         onNavigate={(dest) => {
           if (dest === 'Home') navigation.navigate('Home');
+          else if (dest === 'Search') navigation.navigate('Search');
           else if (dest === 'Favorites') navigation.navigate('Favorites');
-          else if (dest === 'Price Alerts' || dest === 'Notifications') navigation.navigate('Alerts');
+          else if (dest === 'Price Alerts' || dest === 'Notifications' || dest === 'Alerts') navigation.navigate('Alerts');
           else if (dest === 'Profile' || dest === 'Account') navigation.navigate('Account');
           else if (dest === 'Settings') navigation.navigate('Settings');
+          else if (dest === 'Help & Support' || dest === 'HelpSupport' || dest === 'Help') navigation.navigate('HelpSupport');
+          else if (['Electronics', 'Fashion', 'Home & Living', 'Beauty', 'Appliances', 'Mobiles', 'Categories'].includes(dest)) {
+            const key = dest === 'Mobiles' ? 'electronics' : dest === 'Home & Living' ? 'home' : dest.toLowerCase();
+            navigation.navigate('Category', { categoryKey: key });
+          }
         }}
       />
 

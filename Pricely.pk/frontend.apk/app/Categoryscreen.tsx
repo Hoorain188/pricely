@@ -280,9 +280,15 @@ export default function CategoryScreen() {
           <TextInput
             value={searchValue}
             onChangeText={setSearchValue}
+            onSubmitEditing={() => {
+              if (searchValue.trim()) {
+                navigation.navigate('Search', { query: searchValue });
+              }
+            }}
             placeholder="Search products or stores"
             placeholderTextColor={colors.textTertiary}
             style={styles.searchInput}
+            returnKeyType="search"
           />
         </View>
         <TouchableOpacity style={styles.filterBtn} activeOpacity={0.8} onPress={() => setFilterVisible(true)}>

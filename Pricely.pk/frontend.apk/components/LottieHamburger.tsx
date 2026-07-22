@@ -426,30 +426,39 @@ interface LottieHamburgerProps {
     size?: number;
 }
 
-const AnimatedLottieView = Animated.createAnimatedComponent(LottieView);
-
 const LottieHamburger: React.FC<LottieHamburgerProps> = ({
     isOpen,
     size = 32,
 }) => {
     const animationRef = useRef<LottieView>(null);
-    const progress = useRef(new Animated.Value(0)).current;
+    const isFirstRender = useRef(true);
 
     useEffect(() => {
-        Animated.timing(progress, {
-            toValue: isOpen ? 1 : 0,
-            duration: 300,
-            useNativeDriver: true,
-        }).start();
-    }, [isOpen, progress]);
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            if (isOpen) {
+                animationRef.current?.play(30, 30);
+            } else {
+                animationRef.current?.play(0, 0);
+            }
+            return;
+        }
+
+        if (isOpen) {
+            animationRef.current?.play(0, 30);
+        } else {
+            animationRef.current?.play(30, 0);
+        }
+    }, [isOpen]);
 
     return (
         <View style={{ width: size, height: size }}>
-            <AnimatedLottieView
-                ref={animationRef as any}
+            <LottieView
+                ref={animationRef}
                 source={BURGER_JSON}
                 style={{ width: "100%", height: "100%" }}
-                progress={progress}
+                loop={false}
+                autoPlay={false}
             />
         </View>
     );

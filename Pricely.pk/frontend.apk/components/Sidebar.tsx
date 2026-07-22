@@ -9,6 +9,8 @@ import {
     User,
     Bell,
     Settings,
+    Search,
+    HelpCircle,
     LogOut,
     ChevronDown,
     X,
@@ -20,9 +22,6 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 const PANEL_WIDTH = Math.min(300, SCREEN_WIDTH * 0.8);
 const ROW_HEIGHT = 44;
 
-// Ported from the reference "qube.ai" sidebar: same glass panel + accordion
-// submenu behavior, restyled for Pricely and with real app sections
-// instead of the reference's generic admin-panel items.
 const MENU: {
     key: string;
     label: string;
@@ -30,6 +29,7 @@ const MENU: {
     children?: string[];
 }[] = [
         { key: 'home', label: 'Home', Icon: House },
+        { key: 'search', label: 'Search', Icon: Search },
         {
             key: 'categories',
             label: 'Categories',
@@ -51,6 +51,7 @@ const MENU: {
         },
         { key: 'notifications', label: 'Notifications', Icon: Bell },
         { key: 'settings', label: 'Settings', Icon: Settings },
+        { key: 'help', label: 'Help & Support', Icon: HelpCircle },
     ];
 
 interface AccordionRowProps {

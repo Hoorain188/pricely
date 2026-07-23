@@ -378,7 +378,7 @@ export default function CategoryScreen() {
               return (
                 <Animated.View style={[styles.flashSale, { width: FLASH_WIDTH, transform: [{ scale }], opacity }]}>
                   <Image source={{ uri: loremflickrUri(saleTag, imageLock) }} style={styles.flashImage} resizeMode="cover" />
-                  <LinearGradient colors={['transparent', colors.navy]} locations={[0.3, 1]} style={StyleSheet.absoluteFillObject} />
+                  <LinearGradient colors={['transparent', colors.navy]} locations={[0.3, 1]} style={StyleSheet.absoluteFill} />
                   <View style={styles.flashTextWrap}>
                     <Text style={styles.flashSaleEyebrow}>FLASH SALE</Text>
                     <Text style={styles.flashSaleHeadline}>
@@ -521,7 +521,7 @@ const styles = StyleSheet.create({
 
   flashScroll: { marginBottom: 18, flexGrow: 0 },
   flashSale: { borderRadius: radii.medium, marginRight: 10, overflow: 'hidden', height: 110 },
-  flashImage: { ...StyleSheet.absoluteFillObject },
+  flashImage: { ...StyleSheet.absoluteFill },
   flashTextWrap: { flex: 1, justifyContent: 'flex-end', padding: 14 },
   flashSaleEyebrow: { fontSize: 11, fontFamily: fonts.button, color: colors.accentMango, letterSpacing: 1, marginBottom: 4 },
   flashSaleHeadline: { fontSize: 14, fontFamily: fonts.label, color: colors.onDarkPrimary },

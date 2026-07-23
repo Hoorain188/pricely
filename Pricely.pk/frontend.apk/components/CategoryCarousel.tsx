@@ -130,7 +130,7 @@ export default function CategoryCarousel({ categories, storeCount, onExplore, on
                                 <LinearGradient
                                     colors={['transparent', 'rgba(11,30,61,0.35)', colors.navy]}
                                     locations={[0, 0.55, 1]}
-                                    style={StyleSheet.absoluteFillObject}
+                                    style={StyleSheet.absoluteFill}
                                 />
                                 <View style={styles.cardContent}>
                                     <Text style={styles.cardTitle}>{item.label}</Text>
@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         backgroundColor: colors.navy,
     },
-    cardImage: { ...StyleSheet.absoluteFillObject },
+    cardImage: { ...StyleSheet.absoluteFill },
     cardContent: { flex: 1, justifyContent: 'flex-end', padding: 12 },
     cardTitle: {
         fontSize: 14,

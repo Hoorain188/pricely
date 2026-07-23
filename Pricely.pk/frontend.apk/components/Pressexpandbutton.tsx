@@ -57,7 +57,7 @@ export default function PressExpandButton({ label, onPress, style, loading }: Pr
             locations={gradients.primaryLocations}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
           />
         </Animated.View>
         <View style={styles.foreground} pointerEvents="none">

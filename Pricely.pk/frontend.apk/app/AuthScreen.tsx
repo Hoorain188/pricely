@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
-import { LucideIcon, Shield, User, Lock } from 'lucide-react-native';
+import { LucideIcon, Shield, User, Lock, ArrowLeft } from 'lucide-react-native';
 import LoginForm, { LoginFormRef } from './LoginForm';
 import SignupForm, { SignupFormRef } from './SignupForm';
 import ForgotPasswordForm, { ForgotPasswordFormRef } from './ForgotPasswordForm';
@@ -197,7 +197,7 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           )}
           {mode === 'pendingApproval' && (
             <View style={styles.resetPasswordCard}>
-              <Text style={styles.heading}>Request submitted</Text>
+              <Text style={[styles.heading, styles.centeredText]}>Request submitted</Text>
               <Text style={styles.subtext}>
                 Your admin access request has been sent to the Pricely team. You'll be able to sign in once an
                 existing admin approves it.
@@ -214,7 +214,7 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           )}
           {mode === 'signupBlocked' && (
             <View style={styles.resetPasswordCard}>
-              <Text style={styles.heading}>Couldn't submit request</Text>
+              <Text style={[styles.heading, styles.centeredText]}>Couldn't submit request</Text>
               <Text style={styles.subtext}>{blockedReason}</Text>
               <GradientButton
                 label="Back to sign in"
@@ -229,7 +229,19 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           )}
           {mode === 'resetPassword' && (
             <View style={styles.resetPasswordCard}>
-              <Text style={styles.heading}>Set a new password</Text>
+              <TouchableOpacity
+                style={styles.backBtn}
+                onPress={() => {
+                  setResetPassword('');
+                  setResetConfirmPassword('');
+                  setResetError(undefined);
+                  goTo('login');
+                }}
+                activeOpacity={0.75}
+              >
+                <ArrowLeft size={20} color={colors.textPrimary} />
+              </TouchableOpacity>
+              <Text style={[styles.heading, styles.centeredText]}>Set a new password</Text>
               <Text style={styles.subtext}>Your code was verified. Choose a new password and sign back in.</Text>
               <FloatingLabelInput
                 label="New password"
@@ -331,8 +343,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    alignItems: 'center',
   },
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.medium,
+    backgroundColor: colors.accentTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  centeredText: { textAlign: 'center' },
   heading: { fontSize: 28, fontFamily: fonts.headline, color: colors.textPrimary, marginBottom: 8 },
   subtext: { fontSize: 15, fontFamily: fonts.body, color: colors.textSecondary, lineHeight: 21, marginBottom: 20, textAlign: 'center' },
   link: { color: colors.accentSolid, fontFamily: fonts.button, fontSize: 13 },

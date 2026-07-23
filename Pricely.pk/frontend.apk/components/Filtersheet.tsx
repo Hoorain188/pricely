@@ -36,7 +36,7 @@ export default function FilterSheet({ visible, value, onChange, onClose }: Filte
     return (
         <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
             <View style={styles.backdrop}>
-                <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
+                <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={onClose} />
                 <View style={styles.sheet}>
                     <View style={styles.header}>
                         <Text style={styles.title}>Filter & Sort</Text>

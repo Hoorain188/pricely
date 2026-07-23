@@ -180,13 +180,13 @@ export default function Sidebar({ visible, onClose, onNavigate, onLogout }: Side
     };
 
     return (
-        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-            <Animated.View style={[StyleSheet.absoluteFill, { opacity: backdropOpacity }]}>
+        <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+            <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: backdropOpacity }]}>
                 <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
             </Animated.View>
 
             <Animated.View style={[styles.panel, { width: PANEL_WIDTH, transform: [{ translateX }] }]}>
-                <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFill} />
+                <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
                 <View style={styles.tint} />
 
                 <View style={styles.panelContent}>
@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
     },
     // Brand-tinted glass instead of the reference's plain black tint, so it
     // still reads as "Pricely" even with no photo background behind it.
-    tint: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(14,29,23,0.55)' },
+    tint: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(14,29,23,0.55)' },
     panelContent: { flex: 1, paddingHorizontal: 14 },
 
     header: {

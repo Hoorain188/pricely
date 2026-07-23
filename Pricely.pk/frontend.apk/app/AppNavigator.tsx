@@ -65,7 +65,11 @@ export default function AppNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <Stack.Screen name="Auth" component={AuthScreen} />
-        ) : user?.role === 'admin' ? (
+        ) : user?.role !== 'user' ? (
+          // Every back-office role (admin, support, readonly) goes to the
+          // admin console — LoginForm already gates non-'user' roles to the
+          // ADMIN tab, and AdminTabs handles the per-role screen gating
+          // (e.g. readonly can't reach Duplicates/Users) from there.
           <Stack.Screen name="Admin" component={AdminNavigator} />
         ) : (
           <>

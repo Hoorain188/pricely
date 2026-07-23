@@ -86,14 +86,15 @@ export default function ProfileScreen() {
 
     try {
       await setAuth(
-        { 
-          id: user?.id || '1', 
-          name: editName, 
-          email: editEmail, 
+        {
+          id: user?.id || '1',
+          name: editName,
+          email: editEmail,
+          role: user?.role || 'user',
           phone: editPhone,
           location: editLocation,
           password: editPassword !== '••••••••' ? editPassword : user?.password,
-          avatar: selectedAvatar 
+          avatar: selectedAvatar
         },
         token || 'mock-jwt-token'
       );

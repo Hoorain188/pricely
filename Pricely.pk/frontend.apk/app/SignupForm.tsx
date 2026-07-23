@@ -5,6 +5,7 @@ import FloatingLabelInput from '../components/FloatingLabelInput';
 import PressExpandButton from '../components/Pressexpandbutton';
 import LottieCheckboxField from '../components/LottieCheckboxField';
 import { colors, fonts } from '../theme/colors';
+import { useAccountsStore } from '../context/AccountsContext';
 
 const STEPS = 7;
 
@@ -31,7 +32,7 @@ function Reveal({ anim, children, style }: RevealProps) {
 interface SignupFormProps {
   role?: string;
   onSwitchToLogin: () => void;
-  onSignedUp: (email: string, name: string) => void;
+  onSignedUp: (email: string, name: string, password: string) => void;
 }
 
 export interface SignupFormRef {
@@ -49,6 +50,7 @@ const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupFor
   const [password, setPassword] = useState('');
   const [agree, setAgree] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
+  const { accountExists } = useAccountsStore();
 
   useImperativeHandle(ref, () => ({
     playIn: () => {
@@ -76,6 +78,7 @@ const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupFor
 
     if (!email.trim()) next.email = 'Email is required';
     else if (!EMAIL_RE.test(email.trim())) next.email = 'Enter a valid email address';
+    else if (accountExists(email.trim())) next.email = 'An account with this email already exists';
 
     if (!password) next.password = 'Password is required';
     else if (!PASSWORD_RE.test(password))
@@ -90,7 +93,7 @@ const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupFor
   const handleSignup = async () => {
     if (!validate()) return;
     // The account is only fully authenticated after the OTP verification succeeds.
-    onSignedUp(email.trim(), name.trim());
+    onSignedUp(email.trim(), name.trim(), password);
   };
 
   return (

@@ -6,6 +6,9 @@ import { Fraunces_600SemiBold, Fraunces_700Bold } from '@expo-google-fonts/fraun
 import { Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { IBMPlexMono_600SemiBold, IBMPlexMono_700Bold } from '@expo-google-fonts/ibm-plex-mono';
 import AppNavigator from './frontend.apk/app/AppNavigator';
+import { AccountsProvider } from './frontend.apk/context/AccountsContext';
+import { ActivityProvider } from './frontend.apk/context/ActivityContext';
+import { TeamProvider } from './frontend.apk/context/TeamContext';
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -27,9 +30,13 @@ export default function App() {
   }
 
   return (
-    <>
-      <StatusBar style="dark" />
-      <AppNavigator />
-    </>
+    <AccountsProvider>
+      <ActivityProvider>
+        <TeamProvider>
+          <StatusBar style="dark" />
+          <AppNavigator />
+        </TeamProvider>
+      </ActivityProvider>
+    </AccountsProvider>
   );
 }

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Animated, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { User } from 'lucide-react-native';
+import { LayoutGrid, Copy, Users, Settings, User } from 'lucide-react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import LottieToggleIcon from './LottieToggleIcon';
 import homeJson from '../../assets/Lottie/Home.json';
@@ -9,12 +9,20 @@ import heartJson from '../../assets/Lottie/Heart.json';
 import bellJson from '../../assets/Lottie/Bell.json';
 import { colors, fonts } from '../theme/colors';
 
-// Lottie source per route name — Account has no custom asset yet, so it
-// stays on the plain lucide User icon (see the fallback in TabItem below).
+// Lottie source per route name — routes with no custom asset (Account,
+// and the admin tabs) fall back to a plain lucide icon in TabItem below.
 const LOTTIE_ICONS: Record<string, any> = {
   Home: homeJson,
   Favorites: heartJson,
   Alerts: bellJson,
+};
+
+const FALLBACK_ICONS: Record<string, typeof User> = {
+  Account: User,
+  Dashboard: LayoutGrid,
+  Duplicates: Copy,
+  Users: Users,
+  Settings: Settings,
 };
 
 const ACTIVE_COLOR = colors.accentSolid;
@@ -70,6 +78,7 @@ function TabItem({
   const glowOpacity = useRef(new Animated.Value(0)).current;
   const dotScale = useRef(new Animated.Value(0)).current;
   const lottieSource = LOTTIE_ICONS[routeName];
+  const FallbackIcon = FALLBACK_ICONS[routeName] ?? User;
 
   useEffect(() => {
     Animated.parallel([
@@ -107,7 +116,7 @@ function TabItem({
               ]}
             />
           ) : (
-            <User size={22} color={isActive ? ACTIVE_COLOR : INACTIVE_COLOR} strokeWidth={isActive ? 2.5 : 2} />
+            <FallbackIcon size={22} color={isActive ? ACTIVE_COLOR : INACTIVE_COLOR} strokeWidth={isActive ? 2.5 : 2} />
           )}
         </Animated.View>
       </View>

@@ -7,6 +7,7 @@ import GradientButton from '../components/GradientButton';
 import LottieCheckboxField from '../components/LottieCheckboxField';
 import { colors, fonts } from '../theme/colors';
 import { useAuthStore } from '../context/AuthContext';
+import { useAccountsStore } from '../context/AccountsContext';
 
 const STEPS = 6;
 
@@ -48,7 +49,9 @@ const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(function LoginForm(
   const [password, setPassword] = useState('');
   const [agree, setAgree] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
+  const [formError, setFormError] = useState<string | undefined>();
   const { setAuth } = useAuthStore();
+  const { findAccount } = useAccountsStore();
 
   useImperativeHandle(ref, () => ({
     playIn: () => {
@@ -85,7 +88,23 @@ const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(function LoginForm(
 
   const handleLogin = async () => {
     if (!validate()) return;
-    await setAuth({ id: '1', name: 'User', email }, 'mock-jwt-token');
+    setFormError(undefined);
+
+    const account = findAccount(email, password);
+    if (!account) {
+      setFormError('No account matches that email and password.');
+      return;
+    }
+    // The ADMIN tab covers every back-office permission level (admin,
+    // support, readonly) — only the USER tab is reserved for shoppers.
+    const isBackOfficeAccount = account.role !== 'user';
+    const wantsBackOffice = role === 'admin';
+    if (isBackOfficeAccount !== wantsBackOffice) {
+      setFormError('We couldn’t sign you in with those credentials.');
+      return;
+    }
+
+    await setAuth({ id: account.id, name: account.name, email: account.email, role: account.role }, 'mock-jwt-token');
     onAuthenticated?.();
   };
 
@@ -146,6 +165,7 @@ const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(function LoginForm(
       </Reveal>
 
       <Reveal anim={anims[3]}>
+        {formError ? <Text style={styles.formErrorText}>⚠ {formError}</Text> : null}
         <GradientButton label="Sign in" onPress={handleLogin} style={styles.ctaSpacing} />
       </Reveal>
 
@@ -157,14 +177,7 @@ const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(function LoginForm(
 
       <Reveal anim={anims[5]}>
         <View style={styles.socialRow}>
-          <TouchableOpacity style={styles.socialBtn}>
-            <FontAwesome5 name="google" size={15} color="#EA4335" />
-            <Text style={styles.socialLabel}>Google</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.socialBtn}>
-            <FontAwesome5 name="apple" size={17} color="#000" />
-            <Text style={styles.socialLabel}>Apple</Text>
-          </TouchableOpacity>
+          <Text style={styles.socialHint}>Social sign-in is coming soon.</Text>
         </View>
 
         <View style={styles.switchRow}>
@@ -188,22 +201,12 @@ const styles = StyleSheet.create({
   forgotRow: { alignItems: 'flex-end', marginTop: -8, marginBottom: 4 },
   link: { color: colors.accentSolid, fontFamily: fonts.button, fontSize: 13 },
   ctaSpacing: { marginTop: 4, marginBottom: 24 },
+  formErrorText: { fontSize: 12, fontFamily: fonts.body, color: colors.danger, fontWeight: '600', marginBottom: 10 },
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
   dividerText: { fontSize: 11, fontFamily: fonts.label, color: colors.textTertiary, letterSpacing: 0.5, marginHorizontal: 10 },
-  socialRow: { flexDirection: 'row', gap: 12, marginBottom: 24 },
-  socialBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    height: 50,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  socialLabel: { fontSize: 14, fontFamily: fonts.label, color: colors.textPrimary },
+  socialRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 24 },
+  socialHint: { fontSize: 13, fontFamily: fonts.body, color: colors.textSecondary },
   switchRow: { flexDirection: 'row', justifyContent: 'center' },
   switchText: { fontSize: 14, fontFamily: fonts.body, color: colors.textSecondary },
   checkboxErrorText: {

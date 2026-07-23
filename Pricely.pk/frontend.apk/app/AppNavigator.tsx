@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -14,7 +14,20 @@ import SettingsScreen from './SettingsScreen';
 import HelpSupportScreen from './HelpSupportScreen';
 import SearchScreen from './SearchScreen';
 import AnimatedTabBar from '../components/AnimatedTabBar';
+import AdminNavigator from './AdminNavigator';
 import { useAuthStore } from '../context/AuthContext';
+
+// This is the ONE file that decides which screen the user sees.
+//   - Not logged in     -> AuthScreen (login/signup, single-page swap)
+//   - Logged in, admin  -> AdminNavigator (back-office dashboard + tools)
+//   - Logged in, user   -> MainTabs (Home / Category / Favorites / Alerts /
+//                          Account / ProductDetail / Search) plus the
+//                          Settings/HelpSupport stack routes on top.
+//
+// CategoryScreen and ProductDetail are registered as Tab.Screens (not a
+// separate Stack) so that `navigation.navigate('Category', { categoryKey })`
+// resolves directly — AnimatedTabBar filters them out of the visible bar,
+// so they're reachable but never shown as their own tab icon.
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -37,9 +50,9 @@ function MainTabs() {
 }
 
 export default function AppNavigator() {
-  const { isAuthenticated, loadStoredAuth, isLoading } = useAuthStore();
+  const { user, isAuthenticated, loadStoredAuth, isLoading } = useAuthStore();
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadStoredAuth();
   }, []);
 
@@ -50,15 +63,17 @@ export default function AppNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {isAuthenticated ? (
+        {!isAuthenticated ? (
+          <Stack.Screen name="Auth" component={AuthScreen} />
+        ) : user?.role === 'admin' ? (
+          <Stack.Screen name="Admin" component={AdminNavigator} />
+        ) : (
           <>
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
             <Stack.Screen name="Search" component={SearchScreen} />
           </>
-        ) : (
-          <Stack.Screen name="Auth" component={AuthScreen} />
         )}
       </Stack.Navigator>
     </NavigationContainer>

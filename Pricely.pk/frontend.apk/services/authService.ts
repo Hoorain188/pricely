@@ -13,6 +13,7 @@ export const login = async ({ email }: { email: string; password?: string }): Pr
       id: '1',
       name: 'User',
       email,
+      role: 'user',
     },
     token: 'mock-jwt-token',
   };
@@ -26,6 +27,7 @@ export const signup = async ({ name, email }: { name: string; email: string; pas
       id: '1',
       name,
       email,
+      role: 'user',
     },
     token: 'mock-jwt-token',
   };

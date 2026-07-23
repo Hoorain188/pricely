@@ -6,6 +6,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  role: 'admin' | 'user' | 'support' | 'readonly';
   password?: string;
   avatar?: string;
   phone?: string;

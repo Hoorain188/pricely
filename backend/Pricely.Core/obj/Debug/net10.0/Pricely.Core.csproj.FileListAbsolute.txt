@@ -1,0 +1,13 @@
+D:\MyApp\backend\Pricely.Core\bin\Debug\net10.0\Pricely.Core.deps.json
+D:\MyApp\backend\Pricely.Core\bin\Debug\net10.0\Pricely.Core.dll
+D:\MyApp\backend\Pricely.Core\bin\Debug\net10.0\Pricely.Core.pdb
+D:\MyApp\backend\Pricely.Core\obj\Debug\net10.0\Pricely.Core.GeneratedMSBuildEditorConfig.editorconfig
+D:\MyApp\backend\Pricely.Core\obj\Debug\net10.0\Pricely.Core.AssemblyInfoInputs.cache
+D:\MyApp\backend\Pricely.Core\obj\Debug\net10.0\Pricely.Core.AssemblyInfo.cs
+D:\MyApp\backend\Pricely.Core\obj\Debug\net10.0\Pricely.Core.csproj.CoreCompileInputs.cache
+D:\MyApp\backend\Pricely.Core\obj\Debug\net10.0\Pricely.Core.sourcelink.json
+D:\MyApp\backend\Pricely.Core\obj\Debug\net10.0\Pricely.Core.dll
+D:\MyApp\backend\Pricely.Core\obj\Debug\net10.0\refint\Pricely.Core.dll
+D:\MyApp\backend\Pricely.Core\obj\Debug\net10.0\Pricely.Core.pdb
+D:\MyApp\backend\Pricely.Core\obj\Debug\net10.0\ref\Pricely.Core.dll
+D:\MyApp\backend\Pricely.Core\obj\Debug\net10.0\Pricely.Core.csproj.AssemblyReference.cache

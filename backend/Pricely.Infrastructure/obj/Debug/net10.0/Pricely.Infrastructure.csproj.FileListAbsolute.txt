@@ -1,0 +1,16 @@
+D:\MyApp\backend\Pricely.Infrastructure\bin\Debug\net10.0\Pricely.Infrastructure.deps.json
+D:\MyApp\backend\Pricely.Infrastructure\bin\Debug\net10.0\Pricely.Infrastructure.dll
+D:\MyApp\backend\Pricely.Infrastructure\bin\Debug\net10.0\Pricely.Infrastructure.pdb
+D:\MyApp\backend\Pricely.Infrastructure\bin\Debug\net10.0\Pricely.Core.dll
+D:\MyApp\backend\Pricely.Infrastructure\bin\Debug\net10.0\Pricely.Core.pdb
+D:\MyApp\backend\Pricely.Infrastructure\obj\Debug\net10.0\Pricely.Infrastructure.csproj.AssemblyReference.cache
+D:\MyApp\backend\Pricely.Infrastructure\obj\Debug\net10.0\Pricely.Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+D:\MyApp\backend\Pricely.Infrastructure\obj\Debug\net10.0\Pricely.Infrastructure.AssemblyInfoInputs.cache
+D:\MyApp\backend\Pricely.Infrastructure\obj\Debug\net10.0\Pricely.Infrastructure.AssemblyInfo.cs
+D:\MyApp\backend\Pricely.Infrastructure\obj\Debug\net10.0\Pricely.Infrastructure.csproj.CoreCompileInputs.cache
+D:\MyApp\backend\Pricely.Infrastructure\obj\Debug\net10.0\Pricely.Infrastructure.sourcelink.json
+D:\MyApp\backend\Pricely.Infrastructure\obj\Debug\net10.0\Pricely..F488C63E.Up2Date
+D:\MyApp\backend\Pricely.Infrastructure\obj\Debug\net10.0\Pricely.Infrastructure.dll
+D:\MyApp\backend\Pricely.Infrastructure\obj\Debug\net10.0\refint\Pricely.Infrastructure.dll
+D:\MyApp\backend\Pricely.Infrastructure\obj\Debug\net10.0\Pricely.Infrastructure.pdb
+D:\MyApp\backend\Pricely.Infrastructure\obj\Debug\net10.0\ref\Pricely.Infrastructure.dll

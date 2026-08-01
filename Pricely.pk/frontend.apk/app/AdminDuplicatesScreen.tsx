@@ -1,185 +1,194 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet,
+  ActivityIndicator, RefreshControl,
+} from 'react-native';
 import { Check, Search } from 'lucide-react-native';
 import SegmentedControl from '../components/SegmentedControl';
 import { colors, fonts, radii } from '../theme/colors';
 import { useActivityStore } from '../context/ActivityContext';
 import { useAuthStore } from '../context/AuthContext';
+import { api, formatPrice, ApiError, type ApiDuplicateGroup } from './api/client';
 
-interface Listing {
-  id: string;
-  title: string;
-  store: string;
-  price: string;
-  checked: boolean;
+/** Server group plus the checkbox state, which only lives on the client. */
+interface UiGroup extends ApiDuplicateGroup {
+  checked: Record<number, boolean>;
 }
 
-interface ReviewGroup {
-  id: string;
-  product: string;
-  matchPercent: number;
-  listings: Listing[];
+function toUiGroup(g: ApiDuplicateGroup): UiGroup {
+  return {
+    ...g,
+    checked: Object.fromEntries(g.listings.map((l) => [l.id, l.preSelected])),
+  };
 }
-
-interface MergedProduct {
-  id: string;
-  product: string;
-  meta: string;
-}
-
-const INITIAL_REVIEW_GROUPS: ReviewGroup[] = [
-  {
-    id: 'g1',
-    product: 'iPhone 15 Pro 256GB',
-    matchPercent: 92,
-    listings: [
-      { id: 'l1', title: 'iPhone 15 Pro 256GB Black', store: 'Daraz', price: 'Rs 385,000', checked: true },
-      { id: 'l2', title: 'Apple iPhone15Pro 256 BLK', store: 'Telemart', price: 'Rs 389,900', checked: true },
-      { id: 'l3', title: 'iPhone 15 Pro (256) Blk', store: 'Mega.pk', price: 'Rs 379,500', checked: false },
-    ],
-  },
-  {
-    id: 'g2',
-    product: 'Samsung Galaxy A54 8/128',
-    matchPercent: 76,
-    listings: [
-      { id: 'l4', title: 'Samsung Galaxy A54 8/128 Awesome Graphite', store: 'Daraz', price: 'Rs 64,999', checked: true },
-      { id: 'l5', title: 'Samsung A54 5G 8GB 128GB', store: 'Mega.pk', price: 'Rs 66,500', checked: true },
-    ],
-  },
-  {
-    id: 'g3',
-    product: 'Philips Air Fryer HD9200',
-    matchPercent: 88,
-    listings: [
-      { id: 'l6', title: 'Philips Air Fryer HD9200 5L', store: 'Telemart', price: 'Rs 16,250', checked: true },
-      { id: 'l7', title: 'Philips HD9200/90 Airfryer', store: 'Amazon', price: 'Rs 17,900', checked: false },
-    ],
-  },
-  {
-    id: 'g4',
-    product: 'Anker PowerCore 20000mAh',
-    matchPercent: 81,
-    listings: [
-      { id: 'l8', title: 'Anker PowerCore 20K Slim', store: 'Daraz', price: 'Rs 8,450', checked: true },
-      { id: 'l9', title: 'Anker 20000mAh Power Bank', store: 'Telemart', price: 'Rs 8,900', checked: true },
-    ],
-  },
-  {
-    id: 'g5',
-    product: 'Nike Air Zoom Pegasus 40',
-    matchPercent: 69,
-    listings: [
-      { id: 'l10', title: 'Nike Air Zoom Pegasus 40', store: 'Daraz', price: 'Rs 21,900', checked: true },
-      { id: 'l11', title: 'Nike Pegasus 40 Running Shoes', store: 'Mega.pk', price: 'Rs 22,400', checked: false },
-    ],
-  },
-];
-
-const INITIAL_MERGED: MergedProduct[] = [
-  { id: 'm1', product: 'iPhone 14 128GB', meta: 'Daraz + Mega.pk · merged 14 days ago' },
-  { id: 'm2', product: 'Redmi Note 12 6/128', meta: 'Telemart + Amazon · merged 3 days ago' },
-  { id: 'm3', product: 'Anker 20000mAh PB', meta: 'Daraz + Telemart + Mega.pk · merged 21 days ago' },
-];
 
 export default function AdminDuplicatesScreen() {
   const [tab, setTab] = useState<'review' | 'merged'>('review');
-  const [groups, setGroups] = useState(INITIAL_REVIEW_GROUPS);
-  const [merged, setMerged] = useState(INITIAL_MERGED);
-  const [expandedId, setExpandedId] = useState<string | null>('g1');
+  const [groups, setGroups] = useState<UiGroup[]>([]);
+  const [merged, setMerged] = useState<ApiDuplicateGroup[]>([]);
+  const [counts, setCounts] = useState({ pending: 0, merged: 0 });
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
   const { logActivity } = useActivityStore();
   const { user } = useAuthStore();
-  const canManage = user?.role === 'admin';
 
-  const filteredGroups = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return groups;
-    return groups.filter((g) => g.product.toLowerCase().includes(q));
-  }, [groups, search]);
+  // Support can merge and split too — the backend allows Admin and Support.
+  const canManage = user?.role === 'admin' || user?.role === 'support';
 
-  const filteredMerged = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return merged;
-    return merged.filter((m) => m.product.toLowerCase().includes(q));
-  }, [merged, search]);
+  const load = useCallback(async (query: string) => {
+    try {
+      setLoadError(null);
+      const [pending, mergedRes] = await Promise.all([
+        api.duplicates('pending', query || undefined),
+        api.duplicates('merged', query || undefined),
+      ]);
 
-  const toggleListing = (groupId: string, listingId: string) => {
+      setGroups(pending.items.map(toUiGroup));
+      setMerged(mergedRes.items);
+      setCounts({ pending: pending.pendingCount, merged: pending.mergedCount });
+
+      // Open the strongest match by default, as the mock does.
+      setExpandedId((current) =>
+        current !== null && pending.items.some((g) => g.id === current)
+          ? current
+          : pending.items[0]?.id ?? null,
+      );
+    } catch (error) {
+      setLoadError(error instanceof ApiError ? error.message : 'Could not load duplicates.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(''); }, [load]);
+
+  // Debounce so a search does not fire a request on every keystroke.
+  useEffect(() => {
+    const handle = setTimeout(() => { void load(search.trim()); }, 350);
+    return () => clearTimeout(handle);
+  }, [search, load]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    void load(search.trim());
+  };
+
+  const toggleListing = (groupId: number, listingId: number) => {
     setGroups((prev) =>
       prev.map((g) =>
         g.id !== groupId
           ? g
-          : { ...g, listings: g.listings.map((l) => (l.id === listingId ? { ...l, checked: !l.checked } : l)) }
-      )
+          : { ...g, checked: { ...g.checked, [listingId]: !g.checked[listingId] } },
+      ),
     );
   };
 
-  const persistMerge = async (group: ReviewGroup) => {
-    await Promise.resolve();
-    return true;
-  };
+  const handleMerge = async (group: UiGroup) => {
+    const selected = group.listings.filter((l) => group.checked[l.id]).map((l) => l.id);
+    if (selected.length < 2) return;
 
-  const persistNotAMatch = async (group: ReviewGroup) => {
-    await Promise.resolve();
-    return true;
-  };
-
-  const persistSplit = async (product: MergedProduct) => {
-    await Promise.resolve();
-    return true;
-  };
-
-  const handleMerge = async (group: ReviewGroup) => {
-    const checkedCount = group.listings.filter((listing) => listing.checked).length;
-    if (checkedCount < 2) return;
+    setBusyId(group.id);
+    setActionError(null);
 
     try {
-      const persisted = await persistMerge(group);
-      if (!persisted) return;
+      const res = await api.mergeGroup(group.id, selected);
 
+      // The server returns fresh tab counts, so no refetch is needed.
       setGroups((prev) => prev.filter((g) => g.id !== group.id));
-      setMerged((prev) => [
-        { id: group.id, product: group.product, meta: `${checkedCount} listings merged just now` },
-        ...prev,
-      ]);
-      logActivity(`Merged "${group.product}" duplicate group`);
+      setCounts({ pending: res.pendingCount, merged: res.mergedCount });
+      logActivity(`Merged "${group.title}" duplicate group`);
+
+      // Bring the newly merged row into the other tab.
+      void load(search.trim());
     } catch (error) {
-      console.error('Failed to merge duplicate group', error);
+      setActionError(error instanceof ApiError ? error.message : 'Merge failed.');
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const handleNotAMatch = async (group: ReviewGroup) => {
-    try {
-      const persisted = await persistNotAMatch(group);
-      if (!persisted) return;
+  const handleNotAMatch = async (group: UiGroup) => {
+    setBusyId(group.id);
+    setActionError(null);
 
+    try {
+      const res = await api.rejectGroup(group.id);
       setGroups((prev) => prev.filter((g) => g.id !== group.id));
-      logActivity(`Marked "${group.product}" as not a match`);
+      setCounts({ pending: res.pendingCount, merged: res.mergedCount });
+      logActivity(`Marked "${group.title}" as not a match`);
     } catch (error) {
-      console.error('Failed to mark duplicate group as not a match', error);
+      setActionError(error instanceof ApiError ? error.message : 'Could not reject the group.');
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const handleSplit = async (product: MergedProduct) => {
+  const handleSplit = async (group: ApiDuplicateGroup) => {
+    // Must be the product id, not a listing id — they are different tables.
+    if (group.productId == null) {
+      setActionError('This group has no merged product to split.');
+      return;
+    }
+
+    setBusyId(group.id);
+    setActionError(null);
+
     try {
-      const persisted = await persistSplit(product);
-      if (!persisted) return;
-
-      setMerged((prev) => prev.filter((m) => m.id !== product.id));
-      logActivity(`Split "${product.product}" back into separate listings`);
+      const res = await api.splitProduct(group.productId);
+      setCounts({ pending: res.pendingCount, merged: res.mergedCount });
+      logActivity(`Split "${group.title}" back into separate listings`);
+      // The group returns to Needs review, so both tabs need refreshing.
+      void load(search.trim());
     } catch (error) {
-      console.error('Failed to split merged product', error);
+      setActionError(error instanceof ApiError ? error.message : 'Split failed.');
+    } finally {
+      setBusyId(null);
     }
   };
+
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={colors.accentSolid} />
+      </View>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorTitle}>Couldn't load duplicates</Text>
+        <Text style={styles.errorBody}>{loadError}</Text>
+        <TouchableOpacity
+          style={styles.retryBtn}
+          onPress={() => { setLoading(true); void load(search.trim()); }}
+        >
+          <Text style={styles.retryText}>Try again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.root}
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <Text style={styles.title}>Duplicates</Text>
 
       <SegmentedControl
         options={[
-          { key: 'review', label: `Needs review · ${groups.length}` },
-          { key: 'merged', label: `Merged · ${merged.length}` },
+          { key: 'review', label: `Needs review · ${counts.pending}` },
+          { key: 'merged', label: `Merged · ${counts.merged}` },
         ]}
         activeKey={tab}
         onChange={(key) => setTab(key as 'review' | 'merged')}
@@ -196,13 +205,20 @@ export default function AdminDuplicatesScreen() {
         />
       </View>
 
+      {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
+
       {tab === 'review' ? (
         <View style={styles.list}>
-          {filteredGroups.length === 0 ? (
-            <Text style={styles.emptyText}>No pending groups match "{search}".</Text>
+          {groups.length === 0 ? (
+            <Text style={styles.emptyText}>
+              {search ? `No pending groups match "${search}".` : 'Nothing left to review.'}
+            </Text>
           ) : (
-            filteredGroups.map((group) => {
+            groups.map((group) => {
               const expanded = expandedId === group.id;
+              const selectedCount = group.listings.filter((l) => group.checked[l.id]).length;
+              const busy = busyId === group.id;
+
               return (
                 <View key={group.id} style={styles.card}>
                   <TouchableOpacity
@@ -211,12 +227,16 @@ export default function AdminDuplicatesScreen() {
                     onPress={() => setExpandedId(expanded ? null : group.id)}
                   >
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.productTitle}>{group.product}</Text>
-                      {!expanded && <Text style={styles.collapsedMeta}>{group.listings.length} listings to review</Text>}
+                      <Text style={styles.productTitle}>{group.title}</Text>
+                      {!expanded && (
+                        <Text style={styles.collapsedMeta}>
+                          {group.listings.length} listings to review
+                        </Text>
+                      )}
                     </View>
                     <View style={expanded ? styles.matchPillStrong : styles.matchPill}>
                       <Text style={expanded ? styles.matchPillStrongText : styles.matchPillText}>
-                        {expanded ? `${group.matchPercent}% MATCH` : `${group.matchPercent}%`}
+                        {expanded ? `${group.matchScore}% MATCH` : `${group.matchScore}%`}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -224,41 +244,58 @@ export default function AdminDuplicatesScreen() {
                   {expanded && (
                     <>
                       <View style={styles.listingList}>
-                        {group.listings.map((listing) => (
-                          <TouchableOpacity
-                            key={listing.id}
-                            style={styles.listingRow}
-                            onPress={() => toggleListing(group.id, listing.id)}
-                            activeOpacity={0.7}
-                          >
-                            <View style={[styles.checkbox, listing.checked && styles.checkboxChecked]}>
-                              {listing.checked ? <Check size={12} color="#fff" strokeWidth={3} /> : null}
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.listingTitle, !listing.checked && styles.listingTitleMuted]}>
-                                {listing.title}
-                              </Text>
-                              <Text style={styles.listingMeta}>{listing.store} · {listing.price}</Text>
-                            </View>
-                          </TouchableOpacity>
-                        ))}
+                        {group.listings.map((listing) => {
+                          const isChecked = group.checked[listing.id];
+                          return (
+                            <TouchableOpacity
+                              key={listing.id}
+                              style={styles.listingRow}
+                              onPress={() => toggleListing(group.id, listing.id)}
+                              activeOpacity={0.7}
+                              disabled={busy}
+                            >
+                              <View style={[styles.checkbox, isChecked && styles.checkboxChecked]}>
+                                {isChecked ? <Check size={12} color="#fff" strokeWidth={3} /> : null}
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.listingTitle, !isChecked && styles.listingTitleMuted]}>
+                                  {listing.title}
+                                </Text>
+                                <Text style={styles.listingMeta}>
+                                  {listing.storeName} · {formatPrice(listing.price, listing.currency)}
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
                       </View>
 
                       {canManage ? (
                         <View style={styles.actionsRow}>
                           <TouchableOpacity
-                            style={styles.mergeBtn}
-                            disabled={group.listings.filter((listing) => listing.checked).length < 2}
+                            style={[
+                              styles.mergeBtn,
+                              (selectedCount < 2 || busy) && styles.btnDisabled,
+                            ]}
+                            disabled={selectedCount < 2 || busy}
                             onPress={() => void handleMerge(group)}
                           >
-                            <Text style={styles.mergeBtnText}>Merge selected</Text>
+                            <Text style={styles.mergeBtnText}>
+                              {busy ? 'Working…' : 'Merge selected'}
+                            </Text>
                           </TouchableOpacity>
-                          <TouchableOpacity style={styles.rejectBtn} onPress={() => handleNotAMatch(group)}>
+                          <TouchableOpacity
+                            style={[styles.rejectBtn, busy && styles.btnDisabled]}
+                            disabled={busy}
+                            onPress={() => void handleNotAMatch(group)}
+                          >
                             <Text style={styles.rejectBtnText}>Not a match</Text>
                           </TouchableOpacity>
                         </View>
                       ) : (
-                        <Text style={styles.viewOnlyNote}>Only admins can merge or reject a match.</Text>
+                        <Text style={styles.viewOnlyNote}>
+                          Only admins and support can merge or reject a match.
+                        </Text>
                       )}
                     </>
                   )}
@@ -269,19 +306,29 @@ export default function AdminDuplicatesScreen() {
         </View>
       ) : (
         <View style={styles.list}>
-          {filteredMerged.length === 0 ? (
-            <Text style={styles.emptyText}>No merged products match "{search}".</Text>
+          {merged.length === 0 ? (
+            <Text style={styles.emptyText}>
+              {search ? `No merged products match "${search}".` : 'Nothing has been merged yet.'}
+            </Text>
           ) : (
-            filteredMerged.map((p) => (
+            merged.map((p) => (
               <View key={p.id} style={styles.card}>
                 <View style={styles.mergedRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.productTitle}>{p.product}</Text>
-                    <Text style={styles.collapsedMeta}>{p.meta}</Text>
+                    <Text style={styles.productTitle}>{p.title}</Text>
+                    <Text style={styles.collapsedMeta}>
+                      {p.listings.map((l) => l.storeName).join(' + ')}
+                    </Text>
                   </View>
                   {canManage && (
-                    <TouchableOpacity style={styles.splitBtn} onPress={() => handleSplit(p)}>
-                      <Text style={styles.splitBtnText}>Split</Text>
+                    <TouchableOpacity
+                      style={[styles.splitBtn, busyId === p.id && styles.btnDisabled]}
+                      disabled={busyId === p.id}
+                      onPress={() => void handleSplit(p)}
+                    >
+                      <Text style={styles.splitBtnText}>
+                        {busyId === p.id ? '…' : 'Split'}
+                      </Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -300,8 +347,12 @@ export default function AdminDuplicatesScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 40 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, backgroundColor: colors.background },
+  errorTitle: { fontSize: 15, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
+  errorBody: { fontSize: 12.5, fontFamily: fonts.body, color: colors.textSecondary, textAlign: 'center', marginBottom: 16 },
+  retryBtn: { backgroundColor: colors.accentSolid, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 22 },
+  retryText: { fontSize: 12.5, fontFamily: fonts.button, color: '#fff' },
   title: { fontSize: 24, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginBottom: 14 },
-
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -316,9 +367,8 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 12.5, fontFamily: fonts.body, color: colors.textPrimary, paddingVertical: 10 },
   emptyText: { fontSize: 12.5, fontFamily: fonts.body, color: colors.textTertiary, textAlign: 'center', paddingVertical: 20 },
-
+  actionError: { fontSize: 11.5, fontFamily: fonts.body, color: colors.danger, marginTop: 10 },
   list: { gap: 12, marginTop: 16 },
-
   card: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -328,12 +378,10 @@ const styles = StyleSheet.create({
   },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   productTitle: { fontSize: 14, fontFamily: fonts.label, fontWeight: '700', color: colors.textPrimary },
-
   matchPillStrong: { backgroundColor: 'rgba(242,169,59,0.18)', borderRadius: 100, paddingVertical: 3, paddingHorizontal: 8 },
   matchPillStrongText: { fontSize: 10, fontFamily: fonts.mono, fontWeight: '700', color: colors.accentMango },
   matchPill: { backgroundColor: colors.border, borderRadius: 100, paddingVertical: 3, paddingHorizontal: 8 },
   matchPillText: { fontSize: 10, fontFamily: fonts.mono, fontWeight: '700', color: colors.textSecondary },
-
   listingList: { gap: 9, marginTop: 13, marginBottom: 13 },
   listingRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   checkbox: {
@@ -349,8 +397,8 @@ const styles = StyleSheet.create({
   listingTitle: { fontSize: 12, fontFamily: fonts.label, color: colors.textPrimary },
   listingTitleMuted: { color: colors.textTertiary },
   listingMeta: { fontSize: 10.5, fontFamily: fonts.body, color: colors.textTertiary, marginTop: 1 },
-
   actionsRow: { flexDirection: 'row', gap: 9 },
+  btnDisabled: { opacity: 0.5 },
   viewOnlyNote: { fontSize: 11, fontFamily: fonts.body, color: colors.textTertiary, fontStyle: 'italic', marginTop: 4 },
   mergeBtn: { flex: 1, backgroundColor: colors.accentSolid, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   mergeBtnText: { fontSize: 12, fontFamily: fonts.button, color: '#fff' },
@@ -363,12 +411,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   rejectBtnText: { fontSize: 12, fontFamily: fonts.button, color: colors.danger },
-
   collapsedMeta: { fontSize: 11, fontFamily: fonts.body, color: colors.textTertiary, marginTop: 3 },
-
   mergedRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   splitBtn: { borderWidth: 1.3, borderColor: colors.border, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 13 },
   splitBtnText: { fontSize: 11.5, fontFamily: fonts.button, color: colors.textSecondary },
-
   footnote: { fontSize: 11, fontFamily: fonts.body, color: colors.textTertiary, textAlign: 'center', marginTop: 4 },
 });

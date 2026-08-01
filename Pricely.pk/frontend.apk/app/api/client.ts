@@ -11,7 +11,7 @@
 const BASE = (process.env.EXPO_PUBLIC_API_URL ?? '').trim().replace(/\/$/, '');
 
 /** Stands in for the signed-in admin until auth ships. Remove once JWTs exist. */
-let actorId: string | null = '203';
+let actorId: string | null = '208';
 
 export function setActorId(id: string | null) {
   actorId = id;
@@ -138,6 +138,51 @@ export interface DuplicateActionResponse {
   mergedCount: number;
 }
 
+export interface ApiCustomer {
+  id: number;
+  name: string;
+  email: string;
+  alertCount: number;
+  isActive: boolean;
+}
+
+export interface CustomersResponse {
+  totalCount: number;
+  items: ApiCustomer[];
+  page: number;
+  totalPages: number;
+}
+
+export type Role = 'admin' | 'support' | 'readonly';
+
+export interface ApiTeamMember {
+  id: number;
+  name: string;
+  email: string;
+  role: Role;
+  jobTitle: string | null;
+  avatarInitial: string;
+}
+
+export interface TeamResponse {
+  totalCount: number;
+  items: ApiTeamMember[];
+}
+
+export interface ApiTeamRequest {
+  id: number;
+  email: string;
+  name: string | null;
+  requestedRole: Role;
+  requestedAt: string;
+}
+
+export interface NotificationPrefs {
+  newReports: boolean;
+  syncFailures: boolean;
+  weeklySummaryEmail: boolean;
+}
+
 // -------------------------------------------------------------- calls
 
 export const api = {
@@ -162,7 +207,57 @@ export const api = {
 
   splitProduct: (productId: number) =>
     request<DuplicateActionResponse>(`/admin/products/${productId}/split`, { method: 'POST' }),
+
+  customers: (search?: string, page = 1, pageSize = 50) =>
+    request<CustomersResponse>(
+      `/admin/customers?page=${page}&pageSize=${pageSize}` +
+        (search ? `&q=${encodeURIComponent(search)}` : ''),
+    ),
+
+  team: () => request<TeamResponse>('/admin/team'),
+
+  inviteMember: (email: string, role: Role) =>
+    request<{ inviteId: number; email: string; role: string }>('/admin/team/invites', {
+      method: 'POST',
+      // The API expects the C# enum spelling: Admin / Support / ReadOnly.
+      body: JSON.stringify({ email, role: toApiRole(role) }),
+    }),
+
+  changeRole: (userId: number, role: Role) =>
+    request<ApiTeamMember>(`/admin/team/${userId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role: toApiRole(role) }),
+    }),
+
+  removeMember: (userId: number) =>
+    request<void>(`/admin/team/${userId}`, { method: 'DELETE' }),
+
+  teamRequests: () => request<ApiTeamRequest[]>('/admin/team/requests'),
+
+  approveRequest: (requestId: number) =>
+    request<void>(`/admin/team/requests/${requestId}/approve`, { method: 'POST' }),
+
+  rejectRequest: (requestId: number) =>
+    request<void>(`/admin/team/requests/${requestId}/reject`, { method: 'POST' }),
+
+  notificationPrefs: () => request<NotificationPrefs>('/admin/me/notifications'),
+
+  updateNotificationPrefs: (prefs: NotificationPrefs) =>
+    request<NotificationPrefs>('/admin/me/notifications', {
+      method: 'PATCH',
+      body: JSON.stringify(prefs),
+    }),
 };
+
+/** The API sends lowercase roles but expects PascalCase when receiving them. */
+function toApiRole(role: Role): string {
+  return role === 'readonly' ? 'ReadOnly' : role === 'admin' ? 'Admin' : 'Support';
+}
+
+/** Full URL for the CSV export, for opening in the browser. */
+export function customersExportUrl(): string {
+  return `${BASE}/admin/customers/export`;
+}
 
 // ------------------------------------------------------------ helpers
 

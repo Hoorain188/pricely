@@ -45,12 +45,76 @@ public class TeamController : ControllerBase
         return Ok(new TeamResponse(items.Count, items));
     }
 
+    /// <summary>
+    /// Inbound access requests — people who asked for admin access themselves.
+    /// The activity log in the mock references approving and rejecting these,
+    /// and team_requests.type = self_signup is where they live.
+    /// </summary>
+    [HttpGet("requests")]
+    public async Task<ActionResult<IReadOnlyList<TeamRequestDto>>> Requests(CancellationToken ct)
+    {
+        var rows = await _db.TeamRequests
+            .Where(t => t.Type == TeamRequestType.SelfSignup && t.Status == TeamRequestStatus.Pending)
+            .OrderBy(t => t.CreatedAt)
+            .ToListAsync(ct);
+
+        return Ok(rows.Select(t => new TeamRequestDto(
+            t.Id, t.Email, t.Name,
+            t.RequestedRole.ToString().ToLowerInvariant(),
+            t.CreatedAt)).ToList());
+    }
+
+    /// <summary>Approve an access request. Issues a token so they can set a password.</summary>
+    [HttpPost("requests/{requestId:long}/approve")]
+    public async Task<IActionResult> ApproveRequest(long requestId, CancellationToken ct)
+    {
+        var req = await _db.TeamRequests.FirstOrDefaultAsync(t => t.Id == requestId, ct);
+        if (req is null) return NotFound();
+
+        if (req.Status != TeamRequestStatus.Pending)
+            return Conflict(new { title = "This request has already been reviewed" });
+
+        req.Status      = TeamRequestStatus.Approved;
+        req.ReviewedBy  = _me.Id;
+        req.ReviewedAt  = DateTimeOffset.UtcNow;
+        req.InviteToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+
+        _log.Record("team.request_approved", "team_request", requestId,
+            new { email = req.Email, name = req.Name });
+
+        await _db.SaveChangesAsync(ct);
+
+        // TODO: email the token so they can set a password.
+        return NoContent();
+    }
+
+    /// <summary>Reject an access request.</summary>
+    [HttpPost("requests/{requestId:long}/reject")]
+    public async Task<IActionResult> RejectRequest(long requestId, CancellationToken ct)
+    {
+        var req = await _db.TeamRequests.FirstOrDefaultAsync(t => t.Id == requestId, ct);
+        if (req is null) return NotFound();
+
+        if (req.Status != TeamRequestStatus.Pending)
+            return Conflict(new { title = "This request has already been reviewed" });
+
+        req.Status     = TeamRequestStatus.Rejected;
+        req.ReviewedBy = _me.Id;
+        req.ReviewedAt = DateTimeOffset.UtcNow;
+
+        _log.Record("team.request_rejected", "team_request", requestId,
+            new { email = req.Email, name = req.Name });
+
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     /// <summary>Invite someone by email. They get a link to set their password.</summary>
     [HttpPost("invites")]
     public async Task<ActionResult<InviteResponse>> Invite(InviteRequest req, CancellationToken ct)
     {
-        if (!TeamRoles.Contains(req.Role))
-            return BadRequest(new { title = "Invalid role for a team member" });
+        if (!TryParseTeamRole(req.Role, out var role))
+            return BadRequest(new { title = $"'{req.Role}' is not a valid team role" });
 
         var email = req.Email.Trim().ToLowerInvariant();
 
@@ -64,7 +128,7 @@ public class TeamController : ControllerBase
         var invite = new TeamRequest
         {
             Email         = email,
-            RequestedRole = req.Role,
+            RequestedRole = role,
             Type          = TeamRequestType.Invite,
             Status        = TeamRequestStatus.Pending,
             InvitedBy     = _me.Id,
@@ -74,7 +138,7 @@ public class TeamController : ControllerBase
 
         _db.TeamRequests.Add(invite);
         _log.Record("team.invited", "team_request", null,
-            new { email, role = req.Role.ToString().ToLowerInvariant() });
+            new { email, role = role.ToString().ToLowerInvariant() });
 
         await _db.SaveChangesAsync(ct);
 
@@ -91,8 +155,8 @@ public class TeamController : ControllerBase
     public async Task<ActionResult<TeamMemberDto>> ChangeRole(
         long userId, ChangeRoleRequest req, CancellationToken ct)
     {
-        if (!TeamRoles.Contains(req.Role))
-            return BadRequest(new { title = "Invalid role for a team member" });
+        if (!TryParseTeamRole(req.Role, out var role))
+            return BadRequest(new { title = $"'{req.Role}' is not a valid team role" });
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user is null || !TeamRoles.Contains(user.Role)) return NotFound();
@@ -101,14 +165,14 @@ public class TeamController : ControllerBase
         if (guard is not null) return guard;
 
         var oldRole = user.Role;
-        user.Role      = req.Role;
+        user.Role      = role;
         user.UpdatedAt = DateTimeOffset.UtcNow;
 
         _log.Record("team.role_changed", "user", userId, new
         {
             name = user.Name,
             from = oldRole.ToString().ToLowerInvariant(),
-            to   = req.Role.ToString().ToLowerInvariant()
+            to   = role.ToString().ToLowerInvariant()
         });
 
         await _db.SaveChangesAsync(ct);
@@ -139,6 +203,18 @@ public class TeamController : ControllerBase
         await _db.SaveChangesAsync(ct);
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Accepts any casing the app sends: "admin", "Admin", "readonly", "ReadOnly".
+    /// Rejects "user", since a customer is not a team role.
+    /// </summary>
+    private static bool TryParseTeamRole(string? value, out UserRole role)
+    {
+        role = default;
+        return !string.IsNullOrWhiteSpace(value)
+            && Enum.TryParse(value, ignoreCase: true, out role)
+            && TeamRoles.Contains(role);
     }
 
     /// <summary>

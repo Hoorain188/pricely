@@ -1,144 +1,135 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet,
+  ActivityIndicator, RefreshControl, Linking,
+} from 'react-native';
 import { Search } from 'lucide-react-native';
 import SegmentedControl from '../components/SegmentedControl';
 import RolePill from '../components/RolePill';
 import { colors, fonts, radii } from '../theme/colors';
-import { useTeamStore } from '../context/TeamContext';
-
-interface Customer {
-  id: string;
-  name: string;
-  email: string;
-  alerts: number;
-}
-
-const DEFAULT_CUSTOMERS: Customer[] = [
-  { id: 'c1', name: 'Ahmed Raza', email: 'ahmed@email.com', alerts: 3 },
-  { id: 'c2', name: 'Sara Khan', email: 'sara@email.com', alerts: 7 },
-  { id: 'c3', name: 'Fatima Noor', email: 'fatima@email.com', alerts: 1 },
-];
+import {
+  api, customersExportUrl, ApiError,
+  type ApiCustomer, type ApiTeamMember,
+} from './api/client';
 
 export default function AdminUsersScreen() {
   const [tab, setTab] = useState<'customers' | 'team'>('customers');
   const [search, setSearch] = useState('');
-  const [customers, setCustomers] = useState<Customer[]>(DEFAULT_CUSTOMERS);
-  const [customerTotal, setCustomerTotal] = useState(DEFAULT_CUSTOMERS.length);
-  const [loadingCustomers, setLoadingCustomers] = useState(false);
-  const [customerError, setCustomerError] = useState<string | undefined>();
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<string | undefined>();
-  const { team } = useTeamStore();
-  const customerApiUrl = (process.env.EXPO_PUBLIC_API_URL ?? '').trim();
 
-  useEffect(() => {
-    const searchQuery = search.trim();
-    let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const [customers, setCustomers] = useState<ApiCustomer[]>([]);
+  const [customerTotal, setCustomerTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
-    const loadCustomers = async () => {
-      if (!customerApiUrl) {
-        setCustomerError(undefined);
-        return;
-      }
+  const [team, setTeam] = useState<ApiTeamMember[]>([]);
 
-      const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 10000);
-      setLoadingCustomers(true);
-      setCustomerError(undefined);
-      try {
-        const params = new URLSearchParams({ page: '1', per_page: '500' });
-        if (searchQuery) params.set('search', searchQuery);
-        const response = await fetch(`${customerApiUrl.replace(/\/$/, '')}/customers?${params.toString()}`, {
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          throw new Error(`Request failed with status ${response.status}`);
-        }
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
-        const payload = await response.json();
-        const nextCustomers = Array.isArray(payload?.customers)
-          ? payload.customers
-          : Array.isArray(payload?.data)
-            ? payload.data
-            : DEFAULT_CUSTOMERS;
-        const nextTotal = typeof payload?.total === 'number' ? payload.total : nextCustomers.length;
-
-        if (!cancelled) {
-          setCustomers(nextCustomers);
-          setCustomerTotal(nextTotal);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          if (error instanceof Error && error.name === 'AbortError') {
-            console.warn('Customer loading timed out');
-            setCustomerError('Customer loading timed out. Please try again.');
-          } else {
-            setCustomerError('Unable to load customers right now.');
-          }
-        }
-      } finally {
-        clearTimeout(timeoutId);
-        if (!cancelled) {
-          setLoadingCustomers(false);
-        }
-      }
-    };
-
-    void loadCustomers();
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [customerApiUrl, search]);
-
-  const handleExportCsv = async () => {
-    if (!customerApiUrl) {
-      setExportError('Export is unavailable because no customer API is configured.');
-      return;
-    }
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    setExporting(true);
-    setExportError(undefined);
+  const load = useCallback(async (query: string) => {
     try {
-      const response = await fetch(`${customerApiUrl.replace(/\/$/, '')}/customers/export`, {
-        method: 'GET',
-        signal: controller.signal,
-      });
+      setError(null);
+      const [customersRes, teamRes] = await Promise.all([
+        api.customers(query || undefined, 1),
+        api.team(),
+      ]);
 
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
-    } catch (error) {
-      const message = error instanceof Error && error.name === 'AbortError'
-        ? 'Export timed out. Please try again.'
-        : error instanceof Error ? error.message : 'Unable to export customers.';
-      setExportError(message);
+      setCustomers(customersRes.items);
+      setCustomerTotal(customersRes.totalCount);
+      setPage(customersRes.page);
+      setTotalPages(customersRes.totalPages);
+      setTeam(teamRes.items);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load users.');
     } finally {
-      clearTimeout(timeoutId);
-      setExporting(false);
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(''); }, [load]);
+
+  // Search runs on the server, so debounce to avoid a request per keystroke.
+  useEffect(() => {
+    const handle = setTimeout(() => { void load(search.trim()); }, 350);
+    return () => clearTimeout(handle);
+  }, [search, load]);
+
+  /** 200+ customers is too many for one screen, so pull a page at a time. */
+  const loadMore = async () => {
+    if (loadingMore || page >= totalPages) return;
+
+    setLoadingMore(true);
+    try {
+      const next = await api.customers(search.trim() || undefined, page + 1);
+      setCustomers((prev) => [...prev, ...next.items]);
+      setPage(next.page);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load more customers.');
+    } finally {
+      setLoadingMore(false);
     }
   };
 
-  const filteredCustomers = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return customers;
-    return customers.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q));
-  }, [customers, search]);
+  /**
+   * The CSV is a file download, which React Native cannot save directly.
+   * Handing the URL to the browser lets the phone deal with it.
+   */
+  const handleExportCsv = async () => {
+    setExportError(null);
+    const url = customersExportUrl();
+
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (!canOpen) throw new Error('No app can open that link.');
+      await Linking.openURL(url);
+    } catch {
+      setExportError('Could not open the export. Check the API URL.');
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={colors.accentSolid} />
+      </View>
+    );
+  }
+
+  if (error && customers.length === 0 && team.length === 0) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorTitle}>Couldn't load users</Text>
+        <Text style={styles.errorBody}>{error}</Text>
+        <TouchableOpacity
+          style={styles.retryBtn}
+          onPress={() => { setLoading(true); void load(search.trim()); }}
+        >
+          <Text style={styles.retryText}>Try again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.root}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => { setRefreshing(true); void load(search.trim()); }}
+        />
+      }
+    >
       <View style={styles.headerRow}>
         <Text style={styles.title}>Users</Text>
         {tab === 'customers' && (
-          <TouchableOpacity
-            style={[styles.ghostBtn, (!customerApiUrl || exporting) && styles.ghostBtnDisabled]}
-            onPress={() => void handleExportCsv()}
-            disabled={!customerApiUrl || exporting}
-          >
-            <Text style={styles.ghostBtnText}>{exporting ? 'Exporting…' : customerApiUrl ? 'Export CSV' : 'Unavailable'}</Text>
+          <TouchableOpacity style={styles.ghostBtn} onPress={() => void handleExportCsv()}>
+            <Text style={styles.ghostBtnText}>Export CSV</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -164,36 +155,61 @@ export default function AdminUsersScreen() {
               onChangeText={setSearch}
             />
           </View>
-          {loadingCustomers && filteredCustomers.length === 0 ? (
-            <Text style={styles.emptyText}>Loading customers…</Text>
-          ) : customerError ? (
-            <Text style={styles.emptyText}>{customerError}</Text>
-          ) : filteredCustomers.length === 0 ? (
-            <Text style={styles.emptyText}>No customers match "{search}".</Text>
+
+          {customers.length === 0 ? (
+            <Text style={styles.emptyText}>
+              {search ? `No customers match "${search}".` : 'No customers yet.'}
+            </Text>
           ) : (
-            filteredCustomers.map((c) => (
-              <View key={c.id} style={styles.row}>
-                <View>
-                  <Text style={styles.rowName}>{c.name}</Text>
-                  <Text style={styles.rowMeta}>{c.email} · {c.alerts} alert{c.alerts === 1 ? '' : 's'}</Text>
+            <>
+              {customers.map((c) => (
+                <View key={c.id} style={styles.row}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowName}>{c.name}</Text>
+                    <Text style={styles.rowMeta}>
+                      {c.email} · {c.alertCount} alert{c.alertCount === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                  <RolePill role="customer" />
                 </View>
-                <RolePill role="customer" />
-              </View>
-            ))
+              ))}
+
+              {page < totalPages && (
+                <TouchableOpacity
+                  style={styles.loadMoreBtn}
+                  onPress={() => void loadMore()}
+                  disabled={loadingMore}
+                >
+                  <Text style={styles.loadMoreText}>
+                    {loadingMore
+                      ? 'Loading…'
+                      : `Load more (${customers.length} of ${customerTotal.toLocaleString()})`}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </>
           )}
-          {exportError ? <Text style={styles.emptyText}>{exportError}</Text> : null}
+
+          {exportError ? <Text style={styles.errorLine}>{exportError}</Text> : null}
         </View>
       ) : (
         <View style={styles.list}>
-          {team.map((m) => (
-            <View key={m.id} style={styles.row}>
-              <View>
-                <Text style={styles.rowName}>{m.name}</Text>
-                <Text style={styles.rowMeta}>{m.email} · {m.title}</Text>
+          {team.length === 0 ? (
+            <Text style={styles.emptyText}>No team members yet.</Text>
+          ) : (
+            team.map((m) => (
+              <View key={m.id} style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowName}>{m.name}</Text>
+                  <Text style={styles.rowMeta}>
+                    {m.email}{m.jobTitle ? ` · ${m.jobTitle}` : ' · —'}
+                  </Text>
+                </View>
+                <RolePill role={m.role} />
               </View>
-              <RolePill role={m.role} />
-            </View>
-          ))}
+            ))
+          )}
+
           <Text style={styles.legend}>
             <Text style={styles.legendAdmin}>Admin</Text> — full access incl. merge/split & re-run.{' '}
             <Text style={styles.legendSupport}>Support</Text> — view + respond to users.{' '}
@@ -208,12 +224,16 @@ export default function AdminUsersScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 40 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, backgroundColor: colors.background },
+  errorTitle: { fontSize: 15, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
+  errorBody: { fontSize: 12.5, fontFamily: fonts.body, color: colors.textSecondary, textAlign: 'center', marginBottom: 16 },
+  errorLine: { fontSize: 11.5, fontFamily: fonts.body, color: colors.danger, marginTop: 8 },
+  retryBtn: { backgroundColor: colors.accentSolid, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 22 },
+  retryText: { fontSize: 12.5, fontFamily: fonts.button, color: '#fff' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   title: { fontSize: 24, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary },
   ghostBtn: { borderWidth: 1.3, borderColor: colors.border, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12 },
-  ghostBtnDisabled: { opacity: 0.6 },
   ghostBtnText: { fontSize: 11.5, fontFamily: fonts.button, color: colors.textSecondary },
-
   list: { gap: 9, marginTop: 16 },
   searchBar: {
     flexDirection: 'row',
@@ -229,7 +249,6 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 12.5, fontFamily: fonts.body, color: colors.textPrimary, paddingVertical: 10 },
   emptyText: { fontSize: 12.5, fontFamily: fonts.body, color: colors.textTertiary, textAlign: 'center', paddingVertical: 20 },
-
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -242,7 +261,15 @@ const styles = StyleSheet.create({
   },
   rowName: { fontSize: 13, fontFamily: fonts.label, fontWeight: '700', color: colors.textPrimary },
   rowMeta: { fontSize: 11, fontFamily: fonts.body, color: colors.textTertiary, marginTop: 1 },
-
+  loadMoreBtn: {
+    borderWidth: 1.3,
+    borderColor: colors.border,
+    borderRadius: radii.medium,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  loadMoreText: { fontSize: 12, fontFamily: fonts.button, color: colors.textSecondary },
   legend: { fontSize: 10.5, fontFamily: fonts.body, color: colors.textTertiary, lineHeight: 16, marginTop: 4 },
   legendAdmin: { color: colors.adminAccent, fontFamily: fonts.button },
   legendSupport: { color: '#8A5A12', fontFamily: fonts.button },

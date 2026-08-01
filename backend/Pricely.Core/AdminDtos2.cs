@@ -51,11 +51,29 @@ public record CustomersResponse(
     int Page,
     int TotalPages);
 
-public record InviteRequest(string Email, UserRole Role);
+/// <summary>
+/// Role arrives as a string, not the enum. Model binding an enum makes any
+/// casing mismatch ("readonly" vs "ReadOnly") a generic 400 validation error
+/// with no useful message; parsing it ourselves lets any casing through.
+/// </summary>
+public record InviteRequest(string Email, string Role);
 
 public record InviteResponse(long InviteId, string Email, string Role, DateTimeOffset CreatedAt);
 
-public record ChangeRoleRequest(UserRole Role);
+public record ChangeRoleRequest(string Role);
+
+/// <summary>An inbound "let me in" request — team_requests with type = self_signup.</summary>
+public record TeamRequestDto(
+    long Id,
+    string Email,
+    string? Name,
+    string RequestedRole,
+    DateTimeOffset RequestedAt);
+
+public record NotificationPrefsDto(
+    bool NewReports,
+    bool SyncFailures,
+    bool WeeklySummaryEmail);
 
 // ---------------- Reports and activity ----------------
 

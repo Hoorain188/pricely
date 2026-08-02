@@ -79,11 +79,23 @@ public record NotificationPrefsDto(
 
 public record MoneyValue(decimal Amount, string Currency);
 
+public record PriceChangeDto(
+    string Product,
+    decimal FromPrice,
+    decimal ToPrice,
+    double ChangePercent);
+
+/// <summary>A bar row whose value is money rather than a count.</summary>
+public record MoneyRankedItem(string Label, decimal Amount);
+
 public record ReportsResponse(
     string Period,
     KpiValue ActiveShoppers,
     MoneyValue SavedByShoppers,
-    IReadOnlyList<RankedItem> TrendingSearches);
+    IReadOnlyList<RankedItem> TrendingSearches,
+    IReadOnlyList<PriceChangeDto> PriceChanges,
+    IReadOnlyList<MoneyRankedItem> StoreAverages,
+    IReadOnlyList<RankedItem> Categories);
 
 public record ActivityEntryDto(
     long Id,

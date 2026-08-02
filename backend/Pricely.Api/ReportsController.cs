@@ -52,7 +52,102 @@ public class ReportsController : ControllerBase
             new KpiValue(active, activePrev == 0 ? null
                 : Math.Round((active - activePrev) * 100.0 / activePrev, 1)),
             new MoneyValue(saved, "PKR"),
-            trending));
+            trending,
+            await PriceChangesAsync(from, ct),
+            await StoreAveragesAsync(ct),
+            await CategoryBreakdownAsync(from, ct)));
+    }
+
+    /// <summary>
+    /// Biggest movers in the period: first recorded price vs last, per product.
+    /// Reads price_history, which is the only table that knows what a price
+    /// used to be — store_listings only holds the current one.
+    /// </summary>
+    private async Task<IReadOnlyList<PriceChangeDto>> PriceChangesAsync(
+        DateTimeOffset from, CancellationToken ct)
+    {
+        var points = await _db.PriceHistory
+            .Where(h => h.RecordedAt >= from)
+            .Join(_db.StoreListings, h => h.StoreListingId, l => l.Id,
+                  (h, l) => new { l.ProductId, h.Price, h.RecordedAt })
+            .Where(x => x.ProductId != null)
+            .ToListAsync(ct);
+
+        if (points.Count == 0) return [];
+
+        var productIds = points.Select(x => x.ProductId!.Value).Distinct().ToList();
+
+        var names = await _db.Products
+            .Where(p => productIds.Contains(p.Id))
+            .Select(p => new { p.Id, p.Name })
+            .ToListAsync(ct);
+
+        return points
+            .GroupBy(x => x.ProductId!.Value)
+            .Select(g =>
+            {
+                var ordered = g.OrderBy(x => x.RecordedAt).ToList();
+                var first = ordered.First().Price;
+                var last  = ordered.Last().Price;
+
+                return new PriceChangeDto(
+                    names.FirstOrDefault(n => n.Id == g.Key)?.Name ?? "Unknown",
+                    first, last,
+                    first == 0 ? 0 : Math.Round((double)((last - first) * 100 / first), 1));
+            })
+            // Largest movement in either direction first — a big rise matters
+            // as much as a big drop when you are watching the market.
+            .Where(c => c.ChangePercent != 0)
+            .OrderByDescending(c => Math.Abs(c.ChangePercent))
+            .Take(5)
+            .ToList();
+    }
+
+    /// <summary>Average listing price per store. Shows which store tends to be cheapest.</summary>
+    private async Task<IReadOnlyList<MoneyRankedItem>> StoreAveragesAsync(CancellationToken ct)
+    {
+        var rows = await _db.StoreListings
+            .GroupBy(l => l.StoreId)
+            .Select(g => new { StoreId = g.Key, Avg = g.Average(l => l.Price) })
+            .ToListAsync(ct);
+
+        var stores = await _db.Stores.Select(s => new { s.Id, s.Name }).ToListAsync(ct);
+
+        return rows
+            .Select(r => new MoneyRankedItem(
+                stores.FirstOrDefault(s => s.Id == r.StoreId)?.Name ?? "Unknown",
+                Math.Round(r.Avg, 0)))
+            .OrderBy(r => r.Amount)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Which categories shoppers actually click into. Routes
+    /// store_clicks -> store_listings -> products -> categories.
+    /// </summary>
+    private async Task<IReadOnlyList<RankedItem>> CategoryBreakdownAsync(
+        DateTimeOffset from, CancellationToken ct)
+    {
+        var rows = await _db.StoreClicks
+            .Where(c => c.CreatedAt >= from)
+            .Join(_db.StoreListings, c => c.StoreListingId, l => l.Id, (c, l) => l.ProductId)
+            .Where(pid => pid != null)
+            .Join(_db.Products, pid => pid!.Value, p => p.Id, (pid, p) => p.CategoryId)
+            .Where(cid => cid != null)
+            .GroupBy(cid => cid!.Value)
+            .Select(g => new { CategoryId = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
+        if (rows.Count == 0) return [];
+
+        var categories = await _db.Categories.Select(c => new { c.Id, c.Name }).ToListAsync(ct);
+
+        return rows
+            .Select(r => new RankedItem(
+                categories.FirstOrDefault(c => c.Id == r.CategoryId)?.Name ?? "Uncategorised",
+                r.Count))
+            .OrderByDescending(r => r.Count)
+            .ToList();
     }
 
     /// <summary>

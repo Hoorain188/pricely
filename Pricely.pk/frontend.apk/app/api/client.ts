@@ -10,8 +10,17 @@
 
 const BASE = (process.env.EXPO_PUBLIC_API_URL ?? '').trim().replace(/\/$/, '');
 
-/** Stands in for the signed-in admin until auth ships. Remove once JWTs exist. */
-let actorId: string | null = '208';
+/**
+ * Stands in for the signed-in admin until auth ships — it becomes the
+ * X-Actor-Id header, which the server records as "who did this".
+ *
+ * IMPORTANT: this must be a real users.id from the database, otherwise the
+ * server cannot attribute the action. Find yours with:
+ *   SELECT id, name, role FROM users WHERE role <> 'user' ORDER BY id;
+ *
+ * Delete this whole block once the JWT carries the user id.
+ */
+let actorId: string | null = '208';   // <-- set to YOUR users.id
 
 export function setActorId(id: string | null) {
   actorId = id;
@@ -183,6 +192,44 @@ export interface NotificationPrefs {
   weeklySummaryEmail: boolean;
 }
 
+export interface ApiActivityEntry {
+  id: number;
+  /** Already rendered as a sentence by the server. */
+  description: string;
+  actorName: string;
+  occurredAt: string;
+}
+
+export interface ActivityResponse {
+  items: ApiActivityEntry[];
+  page: number;
+  totalPages: number;
+}
+
+export type Period = 'weekly' | 'monthly' | 'yearly';
+
+export interface ApiPriceChange {
+  product: string;
+  fromPrice: number;
+  toPrice: number;
+  changePercent: number;
+}
+
+export interface MoneyRankedItem {
+  label: string;
+  amount: number;
+}
+
+export interface ReportsResponse {
+  period: string;
+  activeShoppers: KpiValue;
+  savedByShoppers: { amount: number; currency: string };
+  trendingSearches: RankedItem[];
+  priceChanges: ApiPriceChange[];
+  storeAverages: MoneyRankedItem[];
+  categories: RankedItem[];
+}
+
 // -------------------------------------------------------------- calls
 
 export const api = {
@@ -240,6 +287,12 @@ export const api = {
   rejectRequest: (requestId: number) =>
     request<void>(`/admin/team/requests/${requestId}/reject`, { method: 'POST' }),
 
+  reports: (period: Period) =>
+    request<ReportsResponse>(`/admin/reports?period=${period}`),
+
+  activity: (page = 1, pageSize = 30) =>
+    request<ActivityResponse>(`/admin/activity?page=${page}&pageSize=${pageSize}`),
+
   notificationPrefs: () => request<NotificationPrefs>('/admin/me/notifications'),
 
   updateNotificationPrefs: (prefs: NotificationPrefs) =>
@@ -284,6 +337,27 @@ export function toBarRows(items: RankedItem[]) {
   return items.map((i) => ({
     label: i.label,
     value: i.count.toLocaleString(),
+    percent: Math.round((i.count / max) * 100),
+  }));
+}
+
+/** Same as toBarRows but for money values, which are formatted, not counted. */
+export function toMoneyBarRows(items: MoneyRankedItem[]) {
+  const max = Math.max(...items.map((i) => i.amount), 1);
+  return items.map((i) => ({
+    label: i.label,
+    value: formatPrice(i.amount),
+    percent: Math.round((i.amount / max) * 100),
+  }));
+}
+
+/** Share of total, as whole percents — for the category breakdown. */
+export function toShareBarRows(items: RankedItem[]) {
+  const total = items.reduce((sum, i) => sum + i.count, 0) || 1;
+  const max = Math.max(...items.map((i) => i.count), 1);
+  return items.map((i) => ({
+    label: i.label,
+    value: `${Math.round((i.count / total) * 100)}%`,
     percent: Math.round((i.count / max) * 100),
   }));
 }

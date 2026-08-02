@@ -1,65 +1,65 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Toggle from '../components/Toggle';
 import RolePill from '../components/RolePill';
 import { colors, fonts, radii } from '../theme/colors';
 import { useAuthStore } from '../context/AuthContext';
-import { useTeamStore } from '../context/TeamContext';
+import { api, ApiError, type NotificationPrefs } from './api/client';
 
 interface AdminSettingsScreenProps {
   navigation: { navigate: (screen: string) => void };
 }
 
+const DEFAULT_PREFS: NotificationPrefs = {
+  newReports: true,
+  syncFailures: true,
+  weeklySummaryEmail: false,
+};
+
 export default function AdminSettingsScreen({ navigation }: AdminSettingsScreenProps) {
   const { user, clearAuth } = useAuthStore();
-  const { team } = useTeamStore();
-  const [newReports, setNewReports] = useState(true);
-  const [syncFailures, setSyncFailures] = useState(true);
-  const [weeklySummary, setWeeklySummary] = useState(false);
-  const [settingsReady, setSettingsReady] = useState(false);
-  const settingsStorageKey = user?.id ? `admin-notification-settings:${user.id}` : 'admin-notification-settings:guest';
 
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const stored = await AsyncStorage.getItem(settingsStorageKey);
-        if (stored) {
-          const parsed = JSON.parse(stored) as { newReports?: boolean; syncFailures?: boolean; weeklySummary?: boolean };
-          setNewReports(parsed.newReports ?? true);
-          setSyncFailures(parsed.syncFailures ?? true);
-          setWeeklySummary(parsed.weeklySummary ?? false);
-        }
-      } catch (error) {
-        console.warn('Failed to load notification settings', error);
-      } finally {
-        setSettingsReady(true);
-      }
-    };
+  const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
+  const [ready, setReady] = useState(false);
+  const [teamCount, setTeamCount] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-    void loadSettings();
-  }, [settingsStorageKey]);
-
-  const persistSettings = async (next: { newReports: boolean; syncFailures: boolean; weeklySummary: boolean }) => {
+  const load = useCallback(async () => {
     try {
-      await AsyncStorage.setItem(settingsStorageKey, JSON.stringify(next));
-    } catch (error) {
-      console.warn('Failed to save notification settings', error);
+      const [prefsRes, teamRes] = await Promise.all([
+        api.notificationPrefs(),
+        api.team(),
+      ]);
+      setPrefs(prefsRes);
+      setTeamCount(teamRes.totalCount);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load settings.');
+    } finally {
+      setReady(true);
     }
-  };
+  }, []);
 
-  const handleSettingChange = (key: 'newReports' | 'syncFailures' | 'weeklySummary', value: boolean) => {
-    const next = {
-      newReports,
-      syncFailures,
-      weeklySummary,
-      [key]: value,
-    } as { newReports: boolean; syncFailures: boolean; weeklySummary: boolean };
+  useEffect(() => { void load(); }, [load]);
 
-    if (key === 'newReports') setNewReports(value);
-    if (key === 'syncFailures') setSyncFailures(value);
-    if (key === 'weeklySummary') setWeeklySummary(value);
-    void persistSettings(next);
+  /**
+   * Preferences live on the server, not on the phone: the backend is what
+   * sends these emails, so it has to know the setting. Storing them locally
+   * would mean turning a toggle off and still getting the email.
+   */
+  const handleToggle = async (key: keyof NotificationPrefs, value: boolean) => {
+    const previous = prefs;
+    const next = { ...prefs, [key]: value };
+
+    // Flip immediately so the switch feels instant, roll back if the save fails.
+    setPrefs(next);
+    setError(null);
+
+    try {
+      setPrefs(await api.updateNotificationPrefs(next));
+    } catch (err) {
+      setPrefs(previous);
+      setError(err instanceof ApiError ? err.message : 'Could not save that setting.');
+    }
   };
 
   const initials = (user?.name ?? 'Admin')
@@ -86,19 +86,33 @@ export default function AdminSettingsScreen({ navigation }: AdminSettingsScreenP
         </View>
       </View>
 
+      {error ? <Text style={styles.errorLine}>{error}</Text> : null}
+
       <Text style={styles.sectionTitle}>Notifications</Text>
       <View style={styles.group}>
         <View style={[styles.row, styles.rowTop]}>
           <Text style={styles.rowLabel}>New reports</Text>
-          <Toggle value={newReports} onValueChange={(value) => handleSettingChange('newReports', value)} disabled={!settingsReady} />
+          <Toggle
+            value={prefs.newReports}
+            onValueChange={(v) => void handleToggle('newReports', v)}
+            disabled={!ready}
+          />
         </View>
         <View style={styles.row}>
           <Text style={styles.rowLabel}>Sync failures</Text>
-          <Toggle value={syncFailures} onValueChange={(value) => handleSettingChange('syncFailures', value)} disabled={!settingsReady} />
+          <Toggle
+            value={prefs.syncFailures}
+            onValueChange={(v) => void handleToggle('syncFailures', v)}
+            disabled={!ready}
+          />
         </View>
         <View style={styles.row}>
           <Text style={styles.rowLabel}>Weekly summary email</Text>
-          <Toggle value={weeklySummary} onValueChange={(value) => handleSettingChange('weeklySummary', value)} disabled={!settingsReady} />
+          <Toggle
+            value={prefs.weeklySummaryEmail}
+            onValueChange={(v) => void handleToggle('weeklySummaryEmail', v)}
+            disabled={!ready}
+          />
         </View>
         <TouchableOpacity style={[styles.row, styles.rowBottom]} onPress={() => navigation.navigate('Reports')}>
           <Text style={styles.rowLabel}>View reports</Text>
@@ -108,19 +122,25 @@ export default function AdminSettingsScreen({ navigation }: AdminSettingsScreenP
 
       {user?.role !== 'readonly' && (
         <>
-          <Text style={styles.sectionTitle}>Team & security</Text>
+          <Text style={styles.sectionTitle}>Team &amp; security</Text>
           <View style={styles.group}>
             <TouchableOpacity style={[styles.row, styles.rowTop]} onPress={() => navigation.navigate('ManageTeamAccess')}>
               <Text style={styles.rowLabel}>Manage team access</Text>
-              <Text style={styles.rowValue}>{team.length} member{team.length === 1 ? '' : 's'} · roles set ›</Text>
+              <Text style={styles.rowValue}>
+                {teamCount === null
+                  ? '…'
+                  : `${teamCount} member${teamCount === 1 ? '' : 's'} · roles set`} ›
+              </Text>
             </TouchableOpacity>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Two-factor authentication</Text>
-              <Text style={styles.rowValueOn}>ON</Text>
+              {/* Not built yet. Saying OFF is honest; saying ON is a lie that
+                  makes people think they are protected when they are not. */}
+              <Text style={styles.rowValueMuted}>Not set up</Text>
             </View>
             <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('ActiveSessions')}>
               <Text style={styles.rowLabel}>Active sessions</Text>
-              <Text style={styles.rowValue}>2 devices ›</Text>
+              <Text style={styles.rowValue}>Manage devices ›</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.row, styles.rowBottom]} onPress={() => navigation.navigate('ActivityLog')}>
               <Text style={styles.rowLabel}>Activity log</Text>
@@ -141,7 +161,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 40 },
   title: { fontSize: 24, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginBottom: 18 },
-
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 26 },
   avatar: {
     width: 50,
@@ -155,7 +174,7 @@ const styles = StyleSheet.create({
   profileName: { fontSize: 15, fontFamily: fonts.label, fontWeight: '700', color: colors.textPrimary },
   profileEmail: { fontSize: 11.5, fontFamily: fonts.body, color: colors.textTertiary, marginTop: 1 },
   profileRoleWrap: { marginTop: 5, alignSelf: 'flex-start' },
-
+  errorLine: { fontSize: 11.5, fontFamily: fonts.body, color: colors.danger, marginBottom: 12 },
   sectionTitle: { fontSize: 16, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 },
   group: { borderRadius: radii.medium, overflow: 'hidden', marginBottom: 22 },
   row: {
@@ -173,8 +192,7 @@ const styles = StyleSheet.create({
   rowBottom: { borderBottomLeftRadius: radii.medium, borderBottomRightRadius: radii.medium },
   rowLabel: { fontSize: 13, fontFamily: fonts.label, color: colors.textPrimary },
   rowValue: { fontSize: 11.5, fontFamily: fonts.body, color: colors.textTertiary },
-  rowValueOn: { fontSize: 11.5, fontFamily: fonts.button, color: colors.accentSolid },
-
+  rowValueMuted: { fontSize: 11.5, fontFamily: fonts.body, color: colors.textTertiary, fontStyle: 'italic' },
   logoutBtn: {
     borderWidth: 1.3,
     borderColor: 'rgba(220,38,38,0.3)',

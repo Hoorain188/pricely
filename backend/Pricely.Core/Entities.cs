@@ -15,6 +15,16 @@ public class User
     public string? Location { get; set; }
     public string? AvatarUrl { get; set; }
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// Set when the emailed signup code is confirmed; null means unverified.
+    /// Kept separate from IsActive so login can tell "hasn't confirmed their
+    /// email" apart from "waiting on an admin to approve them" — with only
+    /// IsActive the two states are indistinguishable.
+    /// Added by db/002_auth_columns.sql.
+    /// </summary>
+    public DateTimeOffset? EmailVerifiedAt { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 
@@ -182,6 +192,15 @@ public class TeamRequest
 
     /// <summary>Admin who approved or rejected.</summary>
     public long? ReviewedBy { get; set; }
+
+    /// <summary>
+    /// The inactive account this request unlocks, for self-signups. Null for
+    /// invites, where no account exists yet. Previously the two were linked
+    /// only by matching email strings; a real foreign key means approving a
+    /// request cannot silently target nothing.
+    /// Added by db/002_auth_columns.sql.
+    /// </summary>
+    public long? UserId { get; set; }
 
     public string? InviteToken { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

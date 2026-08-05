@@ -3,11 +3,15 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Npgsql;
+using Pricely.Api.Authorization;
 using Pricely.Api.Data;
 using Pricely.Api.Middleware;
 using Pricely.Api.Models;
@@ -76,20 +80,77 @@ builder.Services
         };
     });
 
+// Every back-office policy goes through ActiveBackOfficeHandler, which re-reads
+// the user's row rather than trusting the role inside the token — so demoting
+// or deactivating someone takes effect immediately, not whenever their token
+// happens to expire.
+builder.Services.AddScoped<IAuthorizationHandler, ActiveBackOfficeHandler>();
+
 builder.Services.AddAuthorization(options =>
 {
-    // Admin, Support and Read-only can all reach the back office; what each
-    // may *do* inside it gets enforced per-endpoint.
-    options.AddPolicy("BackOffice", policy =>
-        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Support), nameof(UserRole.ReadOnly)));
+    options.AddPolicy(Policies.BackOffice, policy => policy
+        .RequireAuthenticatedUser()
+        .AddRequirements(new ActiveBackOfficeRequirement(
+            UserRole.Admin, UserRole.Support, UserRole.ReadOnly)));
 
-    options.AddPolicy("AdminOnly", policy => policy.RequireRole(nameof(UserRole.Admin)));
+    // Read-only has no Users/Team screen at all, so it isn't listed here.
+    options.AddPolicy(Policies.TeamView, policy => policy
+        .RequireAuthenticatedUser()
+        .AddRequirements(new ActiveBackOfficeRequirement(UserRole.Admin, UserRole.Support)));
+
+    options.AddPolicy(Policies.AdminOnly, policy => policy
+        .RequireAuthenticatedUser()
+        .AddRequirements(new ActiveBackOfficeRequirement(UserRole.Admin)));
+});
+
+// ── Rate limiting ────────────────────────────────────────────────────────
+// Auth endpoints are the ones worth guessing against, so they get tight
+// per-IP budgets. Without this, nothing stops thousands of login attempts.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.OnRejected = async (context, ct) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsync(
+            """{"code":"rate_limited","message":"Too many attempts. Please wait a minute and try again."}""",
+            ct);
+    };
+
+    // Sign-in and code entry: the brute-force targets.
+    options.AddPolicy(RateLimitPolicies.Sensitive, http =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: ClientKey(http),
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(5),
+                QueueLimit = 0
+            }));
+
+    // Anything that sends an email — stops the API being used as a spam relay
+    // against someone else's inbox.
+    options.AddPolicy(RateLimitPolicies.EmailSending, http =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: ClientKey(http),
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0
+            }));
+
+    static string ClientKey(HttpContext http) =>
+        http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 });
 
 // ── Services ─────────────────────────────────────────────────────────────
 
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IActivityLogger, ActivityLogger>();
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<TeamService>();
 
 // Real mail is the default. The console fallback is only allowed while
 // developing and only when Gmail genuinely isn't configured yet, so a
@@ -177,6 +238,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("App");
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

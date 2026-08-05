@@ -11,6 +11,7 @@ public class PricelyDbContext : DbContext
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<VerificationCode> VerificationCodes => Set<VerificationCode>();
     public DbSet<TeamRequest> TeamRequests => Set<TeamRequest>();
+    public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -54,6 +55,23 @@ public class PricelyDbContext : DbContext
              .OnDelete(DeleteBehavior.Cascade);
 
             e.HasIndex(t => t.Status);
+            e.HasIndex(t => t.InviteToken);
+        });
+
+        modelBuilder.Entity<ActivityLog>(e =>
+        {
+            // The real table is singular. Every other DbSet name pluralises to
+            // match its table, but ActivityLogs would resolve to "activity_logs"
+            // and fail on write, so it's pinned explicitly.
+            e.ToTable("activity_log");
+
+            e.HasOne(a => a.Actor)
+             .WithMany()
+             .HasForeignKey(a => a.ActorId)
+             .OnDelete(DeleteBehavior.Restrict);   // keep the audit trail if a user is deleted
+
+            e.HasIndex(a => a.CreatedAt).IsDescending();
+            e.Property(a => a.Details).HasColumnType("jsonb");
         });
 
         base.OnModelCreating(modelBuilder);

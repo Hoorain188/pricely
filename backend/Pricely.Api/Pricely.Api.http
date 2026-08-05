@@ -102,3 +102,65 @@ Content-Type: application/json
 {
   "refreshToken": "paste-refresh-token-here"
 }
+
+### ─────────────────────────────────────────────────────────────
+### TEAM MANAGEMENT — needs an ADMIN token
+### ─────────────────────────────────────────────────────────────
+@adminToken = paste-admin-access-token-here
+
+### List team members (Admin + Support)
+GET {{host}}/api/admin/team/members
+Authorization: Bearer {{adminToken}}
+
+### Pending requests (Admin + Support)
+GET {{host}}/api/admin/team/requests
+Authorization: Bearer {{adminToken}}
+
+### Who did what (Admin + Support)
+GET {{host}}/api/admin/team/activity?limit=20
+Authorization: Bearer {{adminToken}}
+
+### Approve a pending request — Admin only
+POST {{host}}/api/admin/team/requests/1/approve
+Authorization: Bearer {{adminToken}}
+
+### Reject a pending request — Admin only
+POST {{host}}/api/admin/team/requests/1/reject
+Authorization: Bearer {{adminToken}}
+
+### Invite someone onto the team — Admin only
+POST {{host}}/api/admin/team/invites
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "email": "newcolleague@example.com",
+  "role": "Support"
+}
+
+### Cancel an invite — Admin only
+DELETE {{host}}/api/admin/team/invites/1
+Authorization: Bearer {{adminToken}}
+
+### Change someone's role — Admin only
+PATCH {{host}}/api/admin/team/members/2/role
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "role": "ReadOnly"
+}
+
+### Remove someone from the team — Admin only
+DELETE {{host}}/api/admin/team/members/2
+Authorization: Bearer {{adminToken}}
+
+### Accept an invite (public — the invited person calls this)
+POST {{host}}/api/auth/accept-invite
+Content-Type: application/json
+
+{
+  "token": "paste-invite-token-from-the-email",
+  "name": "New Colleague",
+  "password": "TheirPassword123!"
+}

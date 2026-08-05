@@ -27,6 +27,14 @@ public class LoggingEmailSender : IEmailSender
         return Task.CompletedTask;
     }
 
+    public Task SendTeamInviteAsync(string toEmail, string inviteToken, string role, CancellationToken ct = default)
+    {
+        _logger.LogWarning(
+            "[EMAIL NOT SENT — dev fallback] TEAM INVITE ({Role}) for {Email}, token is {Token}",
+            role, toEmail, inviteToken);
+        return Task.CompletedTask;
+    }
+
     private void Write(string kind, string toEmail, string code) =>
         _logger.LogWarning(
             "[EMAIL NOT SENT — dev fallback] {Kind} code for {Email} is {Code}",

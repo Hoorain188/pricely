@@ -53,7 +53,7 @@ public class TokenService : ITokenService
             // The role the API authorises against. It is read from the database
             // row, never from anything the client sent — that's what stops a
             // tampered app from handing itself admin.
-            new(ClaimNames.Role, user.Role.ToString())
+            new(ClaimNames.Role, user.Role.ToWire())
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SigningKey));

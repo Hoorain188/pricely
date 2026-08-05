@@ -22,7 +22,14 @@ public class TeamRequest
     public long? InvitedBy { get; set; }
     public long? ReviewedBy { get; set; }
 
+    /// <summary>
+    /// SHA-256 hash of the invite token — the raw token exists only in the
+    /// email. Stored hashed so a database leak can't be used to accept invites.
+    /// </summary>
     public string? InviteToken { get; set; }
+
+    /// <summary>Invites expire; a link left in an old inbox shouldn't work forever.</summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ReviewedAt { get; set; }

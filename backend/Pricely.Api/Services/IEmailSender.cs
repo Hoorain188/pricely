@@ -9,4 +9,10 @@ public interface IEmailSender
 {
     Task SendVerificationCodeAsync(string toEmail, string code, CancellationToken ct = default);
     Task SendPasswordResetCodeAsync(string toEmail, string code, CancellationToken ct = default);
+
+    /// <summary>
+    /// Invites someone onto the back-office team. <paramref name="inviteToken"/>
+    /// is the raw token — the only copy that exists outside the email.
+    /// </summary>
+    Task SendTeamInviteAsync(string toEmail, string inviteToken, string role, CancellationToken ct = default);
 }

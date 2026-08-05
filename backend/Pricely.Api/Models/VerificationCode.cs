@@ -19,5 +19,11 @@ public class VerificationCode
     public DateTimeOffset? UsedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
-    public bool IsUsable(DateTimeOffset now) => UsedAt is null && ExpiresAt > now;
+    /// <summary>Wrong guesses so far. The code locks at <see cref="MaxAttempts"/>.</summary>
+    public int Attempts { get; set; }
+
+    public const int MaxAttempts = 5;
+
+    public bool IsUsable(DateTimeOffset now) =>
+        UsedAt is null && ExpiresAt > now && Attempts < MaxAttempts;
 }

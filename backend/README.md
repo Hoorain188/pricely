@@ -67,22 +67,55 @@ If you change the schema, add a numbered file here and run it — don't only cha
 | GET | `/api/auth/me` | Current user (needs token) |
 | GET | `/api/auth/sessions` | Logged-in devices (needs token) |
 | DELETE | `/api/auth/sessions/{id}` | Log a device out (needs token) |
+| POST | `/api/auth/accept-invite` | Turn an emailed team invite into an active account |
+
+### Team management (`/api/admin/team`)
+
+| Method | Route | Who |
+|---|---|---|
+| GET | `/members` | Admin, Support |
+| GET | `/requests?status=` | Admin, Support |
+| GET | `/activity?limit=` | Admin, Support |
+| POST | `/requests/{id}/approve` | **Admin only** |
+| POST | `/requests/{id}/reject` | **Admin only** |
+| POST | `/invites` | **Admin only** |
+| DELETE | `/invites/{id}` | **Admin only** |
+| PATCH | `/members/{id}/role` | **Admin only** |
+| DELETE | `/members/{id}` | **Admin only** |
 
 Errors come back as `{ "code": "...", "message": "..." }`. Switch on `code`, show `message`.
 
-Codes you'll want to handle in the app: `email_taken`, `invalid_credentials`, `email_not_verified`, `pending_approval`, `account_disabled`, `invalid_code`.
+Codes to handle in the app: `email_taken`, `invalid_credentials`, `email_not_verified`, `pending_approval`, `account_disabled`, `invalid_code`, `invalid_invite`, `already_member`, `already_invited`, `already_reviewed`, `self_approval`, `self_demotion`, `self_removal`, `last_admin`, `rate_limited`.
+
+Roles are always lowercase on the wire — `admin`, `support`, `readonly`, `user` — matching both the Postgres labels and the app's existing union type.
 
 ## How the roles work
 
-`portal` in the login/signup body says **which tab the person used**, not what they get. The server reads the real role from the database and refuses the request if they don't match — so a tampered client sending `"portal": "admin"` gets nowhere.
+`portal` in the login/signup body says **which tab the person used**, not what they get. The server reads the real role from the database and refuses if they don't match — so a tampered client sending `"portal": "admin"` gets nowhere.
 
 Signing up through the ADMIN tab does **not** grant access. It creates the account inactive plus a `pending` row in `team_requests`; an existing admin has to approve it before login works. Shoppers are active as soon as they confirm their emailed code.
+
+**Invites skip the queue.** An admin already chose that person, and holding the emailed token proves they control the mailbox — so accepting an invite creates an active account directly, no second approval and no separate email code.
+
+### The first admin
+
+Approving requires an existing admin, so the very first one can't be made through the API. Run `db/004_bootstrap_first_admin.sql` once — creating an admin from nothing needs direct database access, which is the right bar for that power.
+
+### What's actually enforced
+
+- Every `/api/admin/**` endpoint re-reads the user's row instead of trusting the role inside the token, so demoting or removing someone takes effect **immediately** rather than whenever their token expires.
+- Admins can't approve their own request, demote themselves, or remove themselves.
+- Rate limits per IP: 10 per 5 min on login and code entry, 5 per 15 min on anything that sends an email.
+- A verification code locks after 5 wrong guesses.
+- Changing a password or a role revokes every existing session for that user.
+- Invite tokens are 48 random bytes, stored only as a SHA-256 hash, single-use, expiring after 7 days.
 
 ## Known gaps
 
 Worth knowing before this goes anywhere real:
 
-- **No rate limiting.** Nothing stops repeated login or code-guessing attempts. Codes are 6 digits, single-use, and expire in 15 minutes, which makes remote brute force impractical but not impossible. Add rate limiting before launch.
-- **Approve/reject endpoints aren't built yet.** The pending queue fills up correctly, but the admin-side actions to clear it are part of the admin API, not this branch.
-- **No automated tests.** The flows here were verified by hand against the real database.
+- **Two admins demoting each other at the same instant could leave zero admins.** The self-guards stop the realistic case, and `GuardLastAdminAsync` is a backstop, but neither closes that race — it needs serialisable isolation or a row lock. Unlikely with a 3-person team; fix before the team grows.
+- **No automated tests.** Everything here was verified by hand against a real database. That's not a substitute for tests that run on every change.
 - **`AllowAnyOrigin` CORS.** Fine for development, needs narrowing before deployment.
+- **Rate limiting is per-IP and in-memory.** Everyone behind one office NAT shares a budget, and the counts reset when the API restarts (and aren't shared if you ever run more than one instance).
+- **Removed members are deactivated, not deleted.** Their row stays so `activity_log` keeps working. There's no "permanently delete a person" path yet, which real privacy requests would eventually need.

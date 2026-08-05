@@ -2,6 +2,8 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Pricely.Api.Authorization;
 using Pricely.Api.Dtos;
 using Pricely.Api.Services;
 
@@ -17,6 +19,7 @@ public class AuthController : ControllerBase
 
     /// <summary>Creates the account and emails a 6-digit code. No login yet.</summary>
     [HttpPost("signup")]
+    [EnableRateLimiting(RateLimitPolicies.EmailSending)]
     public async Task<ActionResult<AuthStatusResponse>> Signup(SignupRequest req, CancellationToken ct)
         => Ok(await _auth.SignupAsync(req, ct));
 
@@ -25,25 +28,40 @@ public class AuthController : ControllerBase
     /// back-office signups get status "pending_approval" instead.
     /// </summary>
     [HttpPost("verify-signup")]
+    [EnableRateLimiting(RateLimitPolicies.Sensitive)]
     public async Task<ActionResult<object>> VerifySignup(VerifyCodeRequest req, CancellationToken ct)
         => Ok(await _auth.VerifySignupAsync(req, ClientIp, ct));
 
     [HttpPost("login")]
+    [EnableRateLimiting(RateLimitPolicies.Sensitive)]
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest req, CancellationToken ct)
         => Ok(await _auth.LoginAsync(req, ClientIp, ct));
 
     [HttpPost("forgot-password")]
+    [EnableRateLimiting(RateLimitPolicies.EmailSending)]
     public async Task<ActionResult<AuthStatusResponse>> ForgotPassword(ForgotPasswordRequest req, CancellationToken ct)
         => Ok(await _auth.ForgotPasswordAsync(req, ct));
 
     /// <summary>Checks the reset code so the app can advance to the new-password screen.</summary>
     [HttpPost("verify-reset-code")]
+    [EnableRateLimiting(RateLimitPolicies.Sensitive)]
     public async Task<ActionResult<AuthStatusResponse>> VerifyResetCode(VerifyCodeRequest req, CancellationToken ct)
         => Ok(await _auth.VerifyResetCodeAsync(req, ct));
 
     [HttpPost("reset-password")]
+    [EnableRateLimiting(RateLimitPolicies.Sensitive)]
     public async Task<ActionResult<AuthStatusResponse>> ResetPassword(ResetPasswordRequest req, CancellationToken ct)
         => Ok(await _auth.ResetPasswordAsync(req, ct));
+
+    /// <summary>
+    /// Turns an emailed team invite into an active account. No approval step —
+    /// an admin already chose this person, and holding the token proves they
+    /// control the invited mailbox.
+    /// </summary>
+    [HttpPost("accept-invite")]
+    [EnableRateLimiting(RateLimitPolicies.Sensitive)]
+    public async Task<ActionResult<AuthResponse>> AcceptInvite(AcceptInviteRequest req, CancellationToken ct)
+        => Ok(await _auth.AcceptInviteAsync(req, ClientIp, ct));
 
     /// <summary>Trades a refresh token for a fresh access token (and a rotated refresh token).</summary>
     [HttpPost("refresh")]

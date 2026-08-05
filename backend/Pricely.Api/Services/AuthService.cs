@@ -14,6 +14,7 @@ public class AuthService
     private readonly PricelyDbContext _db;
     private readonly ITokenService _tokens;
     private readonly IEmailSender _email;
+    private readonly IActivityLogger _activity;
     private readonly JwtOptions _jwt;
     private readonly ILogger<AuthService> _logger;
 
@@ -21,12 +22,14 @@ public class AuthService
         PricelyDbContext db,
         ITokenService tokens,
         IEmailSender email,
+        IActivityLogger activity,
         IOptions<JwtOptions> jwt,
         ILogger<AuthService> logger)
     {
         _db = db;
         _tokens = tokens;
         _email = email;
+        _activity = activity;
         _jwt = jwt.Value;
         _logger = logger;
     }
@@ -284,7 +287,7 @@ public class AuthService
 
     private static string Normalize(string email) => email.Trim().ToLowerInvariant();
 
-    private static UserDto ToDto(User u) => new(u.Id, u.Name, u.Email, u.Role.ToString());
+    private static UserDto ToDto(User u) => new(u.Id, u.Name, u.Email, u.Role.ToWire());
 
     private async Task<AuthResponse> IssueSessionAsync(User user, string? deviceName, string? ip, CancellationToken ct)
     {
@@ -343,9 +346,73 @@ public class AuthService
             throw new AuthException("invalid_code", "That code is expired or already used. Request a new one.");
 
         if (!BCrypt.Net.BCrypt.Verify(code, record.CodeHash))
-            throw new AuthException("invalid_code", "That code isn't right. Check the email and try again.");
+        {
+            // Each wrong guess is counted and persisted, so a 6-digit code
+            // can't be walked through one request at a time. Five misses and
+            // the code is dead — a new one has to be requested.
+            record.Attempts++;
+            await _db.SaveChangesAsync(ct);
+
+            var remaining = VerificationCode.MaxAttempts - record.Attempts;
+            throw new AuthException("invalid_code", remaining > 0
+                ? $"That code isn't right. {remaining} attempt{(remaining == 1 ? "" : "s")} left."
+                : "Too many wrong attempts. Request a new code.");
+        }
 
         return record;
+    }
+
+    // ── Accepting a team invite ──────────────────────────────────────────
+
+    /// <summary>
+    /// Turns an emailed invite into a real, active back-office account. No
+    /// second approval step: an existing admin already chose this person, and
+    /// the token proves they control the invited mailbox.
+    /// </summary>
+    public async Task<AuthResponse> AcceptInviteAsync(AcceptInviteRequest req, string? ip, CancellationToken ct)
+    {
+        var tokenHash = _tokens.HashRefreshToken(req.Token);
+
+        var invite = await _db.TeamRequests.FirstOrDefaultAsync(
+            t => t.InviteToken == tokenHash
+                 && t.Type == TeamRequestType.Invite
+                 && t.Status == TeamRequestStatus.Pending, ct)
+            ?? throw new AuthException("invalid_invite", "That invite is invalid or has already been used.");
+
+        if (invite.ExpiresAt is { } expiry && expiry < DateTimeOffset.UtcNow)
+            throw new AuthException("invalid_invite", "That invite has expired. Ask an admin to send a new one.");
+
+        if (await _db.Users.AnyAsync(u => u.Email == invite.Email, ct))
+            throw new AuthException("email_taken", "An account with this email already exists — try signing in instead.");
+
+        var user = new User
+        {
+            Name = req.Name.Trim(),
+            Email = invite.Email,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
+            Role = invite.RequestedRole,
+            IsActive = true,
+
+            // The invite went to this address and only its holder could produce
+            // the token, so the mailbox is already proven — no second code.
+            EmailVerifiedAt = DateTimeOffset.UtcNow
+        };
+
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync(ct);
+
+        invite.Status = TeamRequestStatus.Approved;
+        invite.UserId = user.Id;
+        invite.Name = user.Name;
+        invite.ReviewedAt = DateTimeOffset.UtcNow;
+        invite.InviteToken = null;   // single use
+
+        _activity.Record(user.Id, ActivityActions.AcceptInvite, "team_request", invite.Id,
+            new { invite.Email, role = user.Role.ToWire() });
+
+        await _db.SaveChangesAsync(ct);
+
+        return await IssueSessionAsync(user, "Invite signup", ip, ct);
     }
 
     private async Task ConsumeCodeAsync(string email, string code, VerificationPurpose purpose, CancellationToken ct)

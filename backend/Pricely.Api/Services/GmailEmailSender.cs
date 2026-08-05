@@ -36,6 +36,16 @@ public class GmailEmailSender : IEmailSender
             "Enter this code in the app to choose a new password. If you didn't request this, you can ignore this email.",
             ct);
 
+    public Task SendTeamInviteAsync(string toEmail, string inviteToken, string role, CancellationToken ct = default) =>
+        SendAsync(
+            toEmail,
+            "You've been invited to the Pricely team",
+            $"You've been invited to join the Pricely back office as {role}. Your invite code is {inviteToken}. It expires in 7 days.",
+            inviteToken,
+            "Join the Pricely team",
+            $"You've been invited as <strong>{role}</strong>. Enter this code in the app to set up your account. It expires in 7 days.",
+            ct);
+
     private async Task SendAsync(
         string toEmail,
         string subject,
@@ -87,12 +97,26 @@ public class GmailEmailSender : IEmailSender
         }
     }
 
-    private static string BuildHtml(string heading, string blurb, string code) => $"""
-        <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#16211A">
-          <h1 style="font-size:20px;margin:0 0 8px">{heading}</h1>
-          <p style="font-size:14px;line-height:1.6;color:#5B6660;margin:0 0 24px">{blurb}</p>
-          <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:32px;font-weight:700;letter-spacing:8px;color:#0E6B4F;background:#EAF4EF;border-radius:12px;padding:18px;text-align:center">{code}</div>
-          <p style="font-size:12px;color:#8B958E;margin:24px 0 0">This code expires in 15 minutes.</p>
-        </div>
-        """;
+    private static string BuildHtml(string heading, string blurb, string code)
+    {
+        // A 6-digit code reads well big and widely spaced; a 64-character invite
+        // token does not — it needs to wrap instead of overflowing the email.
+        var isShortCode = code.Length <= 8;
+        var codeStyle = isShortCode
+            ? "font-size:32px;font-weight:700;letter-spacing:8px;text-align:center"
+            : "font-size:14px;font-weight:600;text-align:center;word-break:break-all;line-height:1.5";
+
+        var footer = isShortCode
+            ? "This code expires in 15 minutes."
+            : "This invite expires in 7 days.";
+
+        return $"""
+            <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#16211A">
+              <h1 style="font-size:20px;margin:0 0 8px">{heading}</h1>
+              <p style="font-size:14px;line-height:1.6;color:#5B6660;margin:0 0 24px">{blurb}</p>
+              <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#0E6B4F;background:#EAF4EF;border-radius:12px;padding:18px;{codeStyle}">{code}</div>
+              <p style="font-size:12px;color:#8B958E;margin:24px 0 0">{footer}</p>
+            </div>
+            """;
+    }
 }

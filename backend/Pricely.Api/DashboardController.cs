@@ -38,6 +38,16 @@ public class DashboardController : ControllerBase
             .Select(g => g.First())
             .ToList();
 
+        // Live count straight from store_listings, per store. This is the
+        // source of truth for "how many items do we actually have" - it
+        // stays correct even if a scraper run is stuck, failed, or was
+        // never wired up to begin with (scraper_runs.ItemsScraped is only
+        // set manually/provisionally right now, see ScrapersController).
+        var listingCounts = await _db.StoreListings
+            .GroupBy(l => l.StoreId)
+            .Select(g => new { StoreId = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
         var scrapers = allStores
             .Where(s => s.IsActive)
             .Select(s =>
@@ -47,10 +57,12 @@ public class DashboardController : ControllerBase
                            : run.FinishedAt is null ? "running"
                            : run.Status == ScraperRunStatus.Ok ? "ok" : "fail";
 
+                var liveItemCount = listingCounts.FirstOrDefault(l => l.StoreId == s.Id)?.Count ?? 0;
+
                 return new ScraperStatusDto(
                     s.Id, s.Name, status,
                     run?.StartedAt,
-                    run?.ItemsScraped ?? 0,
+                    liveItemCount,
                     CanRun: status != "running");
             })
             .ToList();

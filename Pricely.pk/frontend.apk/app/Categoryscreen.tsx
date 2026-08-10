@@ -1,67 +1,67 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  Image,
-  Animated,
-  StyleSheet,
-  Dimensions,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
-  SlidersHorizontal,
-  Smartphone,
-  Tablet,
-  Watch,
-  BatteryCharging,
-  Cable,
-  Monitor,
-  Camera,
-  Tv,
-  Gamepad2,
-  Headphones,
-  Shirt,
-  ShoppingBag,
-  Footprints,
-  Briefcase,
-  Gem,
-  Baby,
-  Droplet,
-  Palette,
-  Scissors,
-  SprayCan,
-  Sparkles,
-  Sofa,
-  UtensilsCrossed,
-  BedDouble,
-  Lamp,
   Archive,
-  Refrigerator,
-  Wind,
+  Baby,
+  BatteryCharging,
+  BedDouble,
+  Briefcase,
+  Cable,
+  Camera,
+  Droplet,
   Fan,
   Flame,
-  Plug,
+  Footprints,
+  Gamepad2,
+  Gem,
   Glasses,
-  Wallet,
-  Package,
+  Headphones,
+  Lamp,
   LucideIcon,
+  Monitor,
+  Package,
+  Palette,
+  Plug,
+  Refrigerator,
+  Scissors,
+  Shirt,
+  ShoppingBag,
+  SlidersHorizontal,
+  Smartphone,
+  Sofa,
+  Sparkles,
+  SprayCan,
+  Tablet,
+  Tv,
+  UtensilsCrossed,
+  Wallet,
+  Watch,
+  Wind,
 } from 'lucide-react-native';
-import { colors, gradients, radii, fonts, shadows } from '../theme/colors';
-import { useCategories, useSubcategories } from '../hooks/useCatalog';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Animated,
+  Dimensions,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { Image } from 'expo-image';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { loremflickrUri } from '../components/CategoryCarousel';
-import { Subcategory, SubcategoryProduct } from '../services/catalogService';
-import LottieBackButton from '../components/Lottiebackbutton';
-import LottieToggleIcon from '../components/LottieToggleIcon';
-import LottieSearchIcon from '../components/Lottiesearchicon';
-import LottieLoader from '../components/Lottieloader';
 import FilterSheet, { FilterState, sortProducts } from '../components/Filtersheet';
-import heartJson from '../../assets/Lottie/Heart.json';
+import LottieBackButton from '../components/Lottiebackbutton';
+import LottieLoader from '../components/Lottieloader';
+import LottieSearchIcon from '../components/Lottiesearchicon';
+import { useCategories, useSubcategories } from '../hooks/useCatalog';
+import { fetchBrowseProducts, formatPrice } from '../services/api';
+import { Subcategory, SubcategoryProduct, searchProducts, subQueryFor } from '../services/catalogService';
+import { colors, fonts, gradients, radii, shadows } from '../theme/colors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CONTENT_PADDING = 16;
@@ -201,20 +201,80 @@ const CATEGORY_SALE_TAGS: Record<string, string> = {
   watches: 'wristwatch,luxury',
 };
 
+function mapSubcategoryToQuery(subKey: string, subLabel: string, activeCategory: string): string {
+  const key = (subKey || '').toLowerCase();
+  const label = (subLabel || '').toLowerCase();
+  const cat = (activeCategory || '').toLowerCase();
+
+  // Primary subcategory mappings
+  if (key === 'androids' || label.includes('android')) return 'androids';
+  if (key === 'iphones' || label.includes('iphone')) return 'iphones';
+  if (key === 'mobiles' || label.includes('mobile')) return 'mobiles';
+  if (key === 'tablets' || label.includes('tablet')) return 'tablets';
+  if (key === 'powerbanks' || label.includes('power bank')) return 'power_banks';
+  if (key === 'laptops' || label.includes('laptop')) return 'laptops';
+  if (key === 'cameras' || label.includes('camera')) return 'cameras';
+  if (key === 'tvs' || label.includes('television') || label.includes('tv')) return 'televisions';
+  if (key === 'audio' || label.includes('audio') || label.includes('headphone')) return 'audio';
+  if (key === 'gaming' || label.includes('gaming')) return 'gaming';
+  if (key === 'accessories' || label.includes('accessories')) return 'accessories';
+  if (key === 'smart' || key === 'analog' || label.includes('watch')) return 'watches';
+  if (key === 'monitors' || label.includes('monitor')) return 'monitors';
+  if (key === 'printers' || label.includes('printer')) return 'printers';
+  if (key === 'projectors' || label.includes('projector')) return 'projectors';
+
+  // Appliances
+  if (key === 'acs' || label.includes('air conditioner')) return 'air_conditioners';
+  if (key === 'fridge' || label.includes('refrigerator')) return 'fridge';
+  if (key === 'washing' || label.includes('washing')) return 'washing_machine';
+  if (key === 'microwave' || label.includes('microwave')) return 'microwave';
+  if (key === 'freezer' || label.includes('freezer')) return 'freezer';
+  if (key === 'fans' || label.includes('fan')) return 'fans';
+  if (key === 'all-appliances') return 'appliances';
+
+  // Beauty
+  if (key === 'skincare' || label.includes('skincare')) return 'skincare';
+  if (key === 'makeup' || label.includes('makeup')) return 'makeup';
+  if (key === 'fragrances' || label.includes('fragrance') || label.includes('perfume')) return 'fragrances';
+  if (key === 'all-beauty') return 'beauty';
+
+  // Fashion
+  if (key === 'footwear' || label.includes('footwear') || label.includes('shoes')) return 'footwear';
+  if (key === 'menswear' || label.includes("men's")) return 'menswear';
+  if (key === 'womenswear' || label.includes("women's")) return 'womenswear';
+  if (key === 'all-fashion') return 'fashion';
+
+  // Home
+  if (key === 'furniture' || label.includes('furniture')) return 'furniture';
+  if (key === 'kitchenware' || label.includes('kitchen')) return 'kitchenware';
+  if (key === 'bedding' || label.includes('bed')) return 'bedding';
+  if (key === 'lighting' || label.includes('light')) return 'lighting';
+  if (key === 'all-home') return 'home';
+
+  return key || label || cat;
+}
+
 export default function CategoryScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const initialCategory: string = route.params?.categoryKey || 'electronics';
+  const storeFilter: string | undefined = route.params?.storeFilter;
 
-  const { categories } = useCategories();
+  const { categories } = useCategories(storeFilter);
   const [activeCategory, setActiveCategory] = useState(initialCategory);
-  const { subcategories, loading } = useSubcategories(activeCategory);
-  
+  const { subcategories, loading } = useSubcategories(activeCategory, storeFilter);
+
+  // Refresh: seed badalne par browse naya (rotated) data deta hai
+  const [seed, setSeed] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
   // Transition loading logic to eliminate flash of empty grids
   const [localLoading, setLocalLoading] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalLoading(true);
+    setApiError(null);
   }, [activeCategory]);
 
   useEffect(() => {
@@ -237,24 +297,97 @@ export default function CategoryScreen() {
 
   useEffect(() => {
     if (subcategories.length > 0) {
-      if (!activeSubcategory || !subcategories.some((s) => s.key === activeSubcategory)) {
+      if (!activeSubcategory || !subcategories.some((s: Subcategory) => s.key === activeSubcategory)) {
         setActiveSubcategory(subcategories[0].key);
       }
     }
   }, [subcategories, activeSubcategory]);
 
-  const activeSub = subcategories.find((s) => s.key === activeSubcategory) ?? subcategories[0];
-  const categoryLabel = categories.find((c) => c.key === activeCategory)?.label ?? activeCategory;
+  const activeSub = subcategories.find((s: Subcategory) => s.key === activeSubcategory) ?? subcategories[0];
+  const categoryLabel = storeFilter
+    ? `${storeFilter} — ${categories.find((c) => c.key === activeCategory)?.label ?? activeCategory}`
+    : (categories.find((c) => c.key === activeCategory)?.label ?? activeCategory);
+
+  const [apiProducts, setApiProducts] = useState<SubcategoryProduct[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    // Sub-category ka DB query term (sahi category se mapping — catalogService).
+    // Agar wahan na mile to purane mapper par gir jao.
+    const queryTerm = subQueryFor(activeCategory, activeSub?.key || '')
+      || mapSubcategoryToQuery(activeSub?.key || '', activeSub?.label || '', activeCategory);
+
+    if (queryTerm) {
+      setApiError(null);
+      // /api/browse — store filter + seed (refresh par naya data) ke sath
+      fetchBrowseProducts(queryTerm, storeFilter, seed)
+        .then((apiResults) => {
+          if (alive && apiResults && apiResults.length > 0) {
+            setApiProducts(apiResults.map((item) => ({
+              name: item.title,
+              price: formatPrice(item.price),
+              pictureTag: item.title,
+              handle: item.handle,
+              imageUrl: item.imageUrl || undefined,
+              url: item.url,
+              store: item.store,
+              currency: item.currency,
+            })));
+          } else if (alive) {
+            searchProducts(queryTerm, storeFilter)
+              .then((res: SubcategoryProduct[]) => {
+                if (alive) setApiProducts(res && res.length > 0 ? res : []);
+              })
+              .catch(() => { if (alive) setApiProducts([]); });
+          }
+        })
+        .catch((err: any) => {
+          if (alive) {
+            setApiError(err?.message || "Can't reach server — check connection");
+            searchProducts(queryTerm, storeFilter)
+              .then((res: SubcategoryProduct[]) => {
+                if (alive) {
+                  setApiProducts(res && res.length > 0 ? res : []);
+                  setApiError(null);
+                }
+              })
+              .catch(() => { });
+          }
+        })
+        .finally(() => { if (alive) setRefreshing(false); });
+    } else {
+      setRefreshing(false);
+    }
+    return () => {
+      alive = false;
+    };
+  }, [activeSubcategory, activeCategory, activeSub, storeFilter, seed]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    setSeed((s) => s + 1); // seed badla -> browse rotated/naya data dega
+  };
 
   const filteredProducts = useMemo(() => {
-    if (!activeSub) return [];
-    let list = activeSub.products;
-    if (filter.stores.length > 0) {
-      const demoStores = ['Daraz', 'Telemart', 'Mega.pk', 'Amazon'];
-      list = list.filter((_, i) => filter.stores.includes(demoStores[i % demoStores.length]));
+    let list: SubcategoryProduct[] = apiProducts.length > 0 ? apiProducts : activeSub ? activeSub.products : [];
+    // storeFilter is already applied at API level, no need to filter again
+    if (!storeFilter && filter.stores.length > 0) {
+      list = list.filter((item: SubcategoryProduct) => {
+        const itemStore = item.store || '';
+        return filter.stores.some(s => s.toLowerCase() === itemStore.toLowerCase());
+      });
+    }
+
+    if (filter.sort === 'relevance') {
+      // Sort combined products by price ascending (putting 0 or invalid prices at the end)
+      const parsePrice = (p: string) => {
+        const num = Number(p.replace(/[^0-9.]/g, '')) || 0;
+        return num === 0 ? 99999999 : num;
+      };
+      return [...list].sort((a, b) => parsePrice(a.price) - parsePrice(b.price));
     }
     return sortProducts(list, filter.sort);
-  }, [activeSub, filter]);
+  }, [apiProducts, activeSub, filter, storeFilter]);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -351,13 +484,34 @@ export default function CategoryScreen() {
         </ScrollView>
       )}
 
+      {/* Network error banner */}
+      {apiError && (
+        <View style={{ backgroundColor: '#FADBD8', paddingVertical: 8, paddingHorizontal: 16, alignItems: 'center' }}>
+          <Text style={{ fontSize: 12, fontFamily: fonts.button, color: '#C0392B' }}>
+            ⚠️ {apiError}
+          </Text>
+        </View>
+      )}
+
       {/* Content */}
       {isPageLoading ? (
         <View style={styles.loaderWrap}>
           <LottieLoader size={44} />
         </View>
       ) : (
-        <ScrollView style={styles.content} contentContainerStyle={styles.contentInner} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentInner}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.accentSolid}
+              colors={[colors.accentSolid]}
+            />
+          }
+        >
           <Animated.FlatList
             data={FLASH_DISCOUNTS}
             horizontal
@@ -377,7 +531,13 @@ export default function CategoryScreen() {
 
               return (
                 <Animated.View style={[styles.flashSale, { width: FLASH_WIDTH, transform: [{ scale }], opacity }]}>
-                  <Image source={{ uri: loremflickrUri(saleTag, imageLock) }} style={styles.flashImage} resizeMode="cover" />
+                  <Image
+                    source={{ uri: loremflickrUri(saleTag, imageLock) }}
+                    style={styles.flashImage}
+                    contentFit="cover"
+                    transition={200}
+                    cachePolicy="memory-disk"
+                  />
                   <LinearGradient colors={['transparent', colors.navy]} locations={[0.3, 1]} style={StyleSheet.absoluteFillObject} />
                   <View style={styles.flashTextWrap}>
                     <Text style={styles.flashSaleEyebrow}>FLASH SALE</Text>
@@ -402,20 +562,35 @@ export default function CategoryScreen() {
           <View style={styles.productGrid}>
             {filteredProducts.map((product: SubcategoryProduct, i: number) => (
               <TouchableOpacity
-                key={product.name}
+                key={`${product.handle || product.name}-${i}`}
                 style={styles.productCard}
                 activeOpacity={0.85}
-                onPress={() => navigation.navigate('ProductDetail', { productName: product.name, currentPrice: product.price })}
+                onPress={() =>
+                  navigation.navigate('ProductDetail', {
+                    handle: product.handle,
+                    url: product.url,
+                    productName: product.name,
+                    currentPrice: product.price,
+                    imageUrl: product.imageUrl,
+                  })
+                }
               >
                 <View style={styles.productImageWrap}>
                   <Image
-                    source={{ uri: loremflickrUri(product.pictureTag || activeSub?.imageTag || 'product', i + 1) }}
+                    source={{ uri: product.imageUrl || loremflickrUri(product.pictureTag || activeSub?.imageTag || 'product', i + 1) }}
                     style={styles.productImage}
-                    resizeMode="cover"
+                    contentFit="contain"
+                    transition={200}
+                    cachePolicy="memory-disk"
                   />
                 </View>
-                <Text style={styles.productName} numberOfLines={1}>{product.name}</Text>
+                <Text style={styles.productName} numberOfLines={2}>{product.name}</Text>
                 <Text style={styles.productPrice}>{product.price}</Text>
+                {product.store ? (
+                  <View style={styles.storeBadge}>
+                    <Text style={styles.storeBadgeText}>{product.store}</Text>
+                  </View>
+                ) : null}
               </TouchableOpacity>
             ))}
             {filteredProducts.length === 0 && (
@@ -551,5 +726,14 @@ const styles = StyleSheet.create({
   productImage: { width: '100%', height: '100%' },
   productName: { fontSize: 13, fontFamily: fonts.body, color: colors.textSecondary, marginBottom: 3 },
   productPrice: { fontSize: 15, fontFamily: fonts.monoEmphasis, color: colors.textPrimary },
+  storeBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.accentTint,
+    borderRadius: radii.small,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginTop: 4,
+  },
+  storeBadgeText: { fontSize: 10, fontFamily: fonts.label, color: colors.accentSolid },
   emptyText: { fontSize: 13, fontFamily: fonts.body, color: colors.textTertiary, paddingVertical: 24, textAlign: 'center', width: '100%' },
 });

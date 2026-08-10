@@ -1,157 +1,191 @@
-import React, { useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  View, Text, TouchableOpacity, ScrollView, StyleSheet,
+  ActivityIndicator, RefreshControl,
+} from 'react-native';
 import StatTile from '../components/StatTile';
 import StatusPill from '../components/StatusPill';
 import BarRow from '../components/BarRow';
 import { colors, fonts, radii } from '../theme/colors';
 import { useAuthStore } from '../context/AuthContext';
 import { useActivityStore } from '../context/ActivityContext';
-
-interface Scraper {
-  store: string;
-  status: 'ok' | 'fail';
-  lastRun: string;
-  items: number;
-}
-
-const SCRAPERS: Scraper[] = [
-  { store: 'Daraz', status: 'ok', lastRun: '2 min ago', items: 4820 },
-  { store: 'Telemart', status: 'fail', lastRun: '5 min ago', items: 0 },
-  { store: 'Mega.pk', status: 'ok', lastRun: '3 min ago', items: 3910 },
-  { store: 'Amazon', status: 'ok', lastRun: '1 min ago', items: 2140 },
-];
-
-const TOP_SEARCHES = [
-  { label: 'iPhone 15', value: '2,340', percent: 100 },
-  { label: 'Air fryer', value: '1,510', percent: 64 },
-  { label: 'Samsung A54', value: '1,120', percent: 48 },
-  { label: 'Sneakers', value: '740', percent: 32 },
-];
-
-const MOST_TRACKED = [
-  { label: 'Redmi Note 13', value: '412', percent: 100 },
-  { label: 'Samsung A54', value: '298', percent: 72 },
-  { label: 'Air Fryer 5L', value: '201', percent: 49 },
-];
-
-const CLICK_THROUGHS = [
-  { label: 'Daraz', value: '3,410', percent: 100 },
-  { label: 'Telemart', value: '2,150', percent: 63 },
-  { label: 'Mega.pk', value: '1,802', percent: 53 },
-  { label: 'Amazon', value: '640', percent: 19 },
-];
-
-
-const RECENT_ERRORS = [
-  'Telemart — timeout after 30s',
-  'Amazon — CAPTCHA detected',
-  'Daraz — 2 items failed to parse',
-];
+import { api, timeAgo, toBarRows, ApiError, type DashboardResponse } from './api/client';
 
 interface AdminDashboardScreenProps {
   navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void };
 }
 
 export default function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) {
-  const { user, token } = useAuthStore();
+  const { user } = useAuthStore();
   const { logActivity } = useActivityStore();
-  const canRerun = user?.role === 'admin';
-  const [rerunState, setRerunState] = useState<Record<string, { loading: boolean; error?: string }>>({});
-  const inFlightReruns = useRef<Record<string, AbortController | null>>({});
-  const scraperApiUrl = (process.env.EXPO_PUBLIC_SCRAPER_API_URL ?? process.env.EXPO_PUBLIC_API_URL ?? '').trim();
 
-  const handleRerun = async (store: string) => {
-    if (!scraperApiUrl) {
-      setRerunState((prev) => ({ ...prev, [store]: { loading: false, error: 'Scraper API is not configured.' } }));
-      return;
+  // Support can re-run scrapers too, not just admins — matches the backend,
+  // which allows Admin and Support on this action.
+  const canRerun = user?.role === 'admin' || user?.role === 'support';
+
+  const [data, setData] = useState<DashboardResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [rerunState, setRerunState] =
+    useState<Record<number, { loading: boolean; error?: string }>>({});
+  const inFlightReruns = useRef<Record<number, boolean>>({});
+
+  const load = useCallback(async () => {
+    try {
+      setLoadError(null);
+      setData(await api.dashboard());
+    } catch (error) {
+      setLoadError(error instanceof ApiError ? error.message : 'Could not load the dashboard.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
+  }, []);
 
-    if (user?.role !== 'admin' || !token) {
-      setRerunState((prev) => ({ ...prev, [store]: { loading: false, error: 'Admin authorization is required.' } }));
-      return;
-    }
+  useEffect(() => { void load(); }, [load]);
 
-    if (inFlightReruns.current[store]) {
-      return;
-    }
+  const onRefresh = () => {
+    setRefreshing(true);
+    void load();
+  };
 
-    const controller = new AbortController();
-    inFlightReruns.current[store] = controller;
-    setRerunState((prev) => ({ ...prev, [store]: { loading: true, error: undefined } }));
+  const handleRerun = async (storeId: number, storeName: string) => {
+    if (inFlightReruns.current[storeId]) return;
 
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    inFlightReruns.current[storeId] = true;
+    setRerunState((prev) => ({ ...prev, [storeId]: { loading: true, error: undefined } }));
 
     try {
-      const response = await fetch(`${scraperApiUrl.replace(/\/$/, '')}/scrapers/rerun`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-          'Idempotency-Key': `rerun:${store}`,
-        },
-        body: JSON.stringify({ store, requestId: `rerun:${store}` }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
-
-      setRerunState((prev) => ({ ...prev, [store]: { loading: false, error: undefined } }));
-      logActivity(`Re-ran the ${store} scraper`);
+      await api.rerunScraper(storeId);
+      setRerunState((prev) => ({ ...prev, [storeId]: { loading: false } }));
+      logActivity(`Re-ran the ${storeName} scraper`);
+      // Pull fresh status so the row reflects the run that just started.
+      await load();
     } catch (error) {
-      const message = error instanceof Error && error.name === 'AbortError'
-        ? 'Scraper re-run timed out.'
-        : error instanceof Error ? error.message : 'Unable to re-run scraper.';
-      setRerunState((prev) => ({ ...prev, [store]: { loading: false, error: message } }));
+      setRerunState((prev) => ({
+        ...prev,
+        [storeId]: {
+          loading: false,
+          error: error instanceof ApiError ? error.message : 'Unable to re-run scraper.',
+        },
+      }));
     } finally {
-      clearTimeout(timeoutId);
-      if (inFlightReruns.current[store] === controller) {
-        inFlightReruns.current[store] = null;
-      }
+      inFlightReruns.current[storeId] = false;
     }
   };
 
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={colors.accentSolid} />
+      </View>
+    );
+  }
+
+  if (loadError || !data) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorTitle}>Couldn't load the dashboard</Text>
+        <Text style={styles.errorBody}>{loadError}</Text>
+        <TouchableOpacity style={styles.retryBtn} onPress={() => { setLoading(true); void load(); }}>
+          <Text style={styles.retryText}>Try again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const { kpis } = data;
+  const trend = (kpi: { changePercent: number | null }) =>
+    kpi.changePercent === null
+      ? '—'
+      : `${kpi.changePercent >= 0 ? '↑' : '↓'} ${Math.abs(kpi.changePercent)}% this week`;
+
+  const failingCount = kpis.scrapersTotal - kpis.scrapersHealthy;
+
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.root}
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <Text style={styles.greeting}>Good morning</Text>
       <Text style={styles.name}>{user?.name ?? 'Admin'}</Text>
       <View style={styles.updatedBadge}>
-        <Text style={styles.updatedText}>LAST UPDATED 2 MIN AGO</Text>
+        <Text style={styles.updatedText}>
+          LAST UPDATED {timeAgo(data.lastUpdatedAt).toUpperCase()}
+        </Text>
       </View>
 
       <View style={styles.statGrid}>
-        <StatTile value="1,240" label="Total users" trend="↑ 8% this week" onPress={() => navigation.navigate('Users')} />
-        <StatTile value="18,430" label="Products tracked" trend="↑ 3% this week" onPress={() => navigation.navigate('AllProducts')} />
-        <StatTile value="3 / 4" label="Scrapers healthy" trend="1 failing" warn />
-        <StatTile value="642" label="Active alerts" trend="↑ 12% this week" onPress={() => navigation.navigate('AllAlerts')} />
+        <StatTile
+          value={kpis.totalUsers.value.toLocaleString()}
+          label="Total users"
+          trend={trend(kpis.totalUsers)}
+          onPress={() => navigation.navigate('Users')}
+        />
+        <StatTile
+          value={kpis.productsTracked.value.toLocaleString()}
+          label="Products tracked"
+          trend={trend(kpis.productsTracked)}
+          onPress={() => navigation.navigate('AllProducts')}
+        />
+        <StatTile
+          value={`${kpis.scrapersHealthy} / ${kpis.scrapersTotal}`}
+          label="Scrapers healthy"
+          trend={failingCount > 0 ? `${failingCount} failing` : 'all healthy'}
+          warn={failingCount > 0}
+        />
+        <StatTile
+          value={kpis.activeAlerts.value.toLocaleString()}
+          label="Active alerts"
+          trend={trend(kpis.activeAlerts)}
+          onPress={() => navigation.navigate('AllAlerts')}
+        />
       </View>
 
       <Text style={styles.sectionTitle}>Scraper health</Text>
       <View style={styles.scraperList}>
-        {SCRAPERS.map((s) => {
-          const rerunStatus = rerunState[s.store];
-          const isLoading = Boolean(rerunStatus?.loading);
-          const isDisabled = !scraperApiUrl || isLoading;
+        {data.scrapers.map((s) => {
+          const rerunStatus = rerunState[s.storeId];
+          const isLoading = Boolean(rerunStatus?.loading) || s.status === 'running';
+          const isDisabled = isLoading || !s.canRun;
 
           return (
-            <View key={s.store} style={[styles.scraperRow, s.status === 'fail' && styles.scraperRowFail]}>
-              <TouchableOpacity onPress={() => navigation.navigate('StoreListings', { store: s.store })}>
-                <Text style={styles.scraperName}>{s.store}</Text>
-                <Text style={styles.scraperMeta}>{s.lastRun} · {s.items.toLocaleString()} items</Text>
+            <View
+              key={s.storeId}
+              style={[styles.scraperRow, s.status === 'fail' && styles.scraperRowFail]}
+            >
+              <TouchableOpacity
+                onPress={() => navigation.navigate('StoreListings', { store: s.storeName })}
+              >
+                <Text style={styles.scraperName}>{s.storeName}</Text>
+                <Text style={styles.scraperMeta}>
+                  {timeAgo(s.lastRunAt)} · {s.itemCount.toLocaleString()} items
+                </Text>
               </TouchableOpacity>
+
               <View style={styles.scraperActions}>
-                <StatusPill status={s.status} />
+                <StatusPill status={s.status === 'running' ? 'ok' : s.status} />
                 {canRerun ? (
                   <View style={styles.rerunColumn}>
                     <TouchableOpacity
                       disabled={isDisabled}
-                      style={[styles.rerunBtn, s.status === 'fail' && styles.rerunBtnFail, isDisabled && styles.rerunBtnDisabled]}
-                      onPress={() => void handleRerun(s.store)}
+                      style={[
+                        styles.rerunBtn,
+                        s.status === 'fail' && styles.rerunBtnFail,
+                        isDisabled && styles.rerunBtnDisabled,
+                      ]}
+                      onPress={() => void handleRerun(s.storeId, s.storeName)}
                     >
-                      <Text style={styles.rerunText}>{isLoading ? 'Starting…' : scraperApiUrl ? 'Re-run' : 'Unavailable'}</Text>
+                      <Text style={styles.rerunText}>
+                        {isLoading ? 'Running…' : 'Re-run'}
+                      </Text>
                     </TouchableOpacity>
-                    {rerunStatus?.error ? <Text style={styles.rerunError}>{rerunStatus.error}</Text> : null}
+                    {rerunStatus?.error ? (
+                      <Text style={styles.rerunError}>{rerunStatus.error}</Text>
+                    ) : null}
                   </View>
                 ) : null}
               </View>
@@ -162,33 +196,47 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
 
       <Text style={styles.sectionTitle}>Top searches this week</Text>
       <View style={styles.barList}>
-        {TOP_SEARCHES.map((r) => (
-          <BarRow key={r.label} {...r} color={colors.accentMango} />
-        ))}
+        {data.topSearches.length === 0 ? (
+          <Text style={styles.emptyText}>No searches yet this week.</Text>
+        ) : (
+          toBarRows(data.topSearches).map((r) => (
+            <BarRow key={r.label} {...r} color={colors.accentMango} />
+          ))
+        )}
       </View>
 
       <Text style={styles.sectionTitle}>Most-tracked products</Text>
       <View style={styles.barList}>
-        {MOST_TRACKED.map((r) => (
-          <BarRow key={r.label} {...r} />
-        ))}
+        {data.mostTracked.length === 0 ? (
+          <Text style={styles.emptyText}>No products are being tracked yet.</Text>
+        ) : (
+          toBarRows(data.mostTracked).map((r) => <BarRow key={r.label} {...r} />)
+        )}
       </View>
 
       <Text style={styles.sectionTitle}>Store click-throughs</Text>
       <View style={styles.barList}>
-        {CLICK_THROUGHS.map((r) => (
-          <BarRow key={r.label} {...r} color={colors.adminAccent} />
-        ))}
+        {data.storeClicks.length === 0 ? (
+          <Text style={styles.emptyText}>No click-throughs recorded yet.</Text>
+        ) : (
+          toBarRows(data.storeClicks).map((r) => (
+            <BarRow key={r.label} {...r} color={colors.adminAccent} />
+          ))
+        )}
       </View>
 
       <Text style={styles.sectionTitle}>Recent errors</Text>
       <View style={styles.errorList}>
-        {RECENT_ERRORS.map((e) => (
-          <View key={e} style={styles.errorRow}>
-            <View style={styles.errorDot} />
-            <Text style={styles.errorText}>{e}</Text>
-          </View>
-        ))}
+        {data.recentErrors.length === 0 ? (
+          <Text style={styles.emptyText}>No errors. Everything is running clean.</Text>
+        ) : (
+          data.recentErrors.map((e, i) => (
+            <View key={`${e.storeName}-${e.occurredAt}-${i}`} style={styles.errorRow}>
+              <View style={styles.errorDot} />
+              <Text style={styles.errorText}>{e.storeName} — {e.message}</Text>
+            </View>
+          ))
+        )}
       </View>
     </ScrollView>
   );
@@ -197,6 +245,11 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 40 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, backgroundColor: colors.background },
+  errorTitle: { fontSize: 15, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
+  errorBody: { fontSize: 12.5, fontFamily: fonts.body, color: colors.textSecondary, textAlign: 'center', marginBottom: 16 },
+  retryBtn: { backgroundColor: colors.accentSolid, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 22 },
+  retryText: { fontSize: 12.5, fontFamily: fonts.button, color: '#fff' },
   greeting: { fontSize: 11, fontFamily: fonts.label, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
   name: { fontSize: 24, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
   updatedBadge: {
@@ -211,6 +264,7 @@ const styles = StyleSheet.create({
   updatedText: { fontSize: 10, fontFamily: fonts.mono, fontWeight: '700', color: colors.accentSolid },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 22 },
   sectionTitle: { fontSize: 16, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginBottom: 10, marginTop: 4 },
+  emptyText: { fontSize: 12, fontFamily: fonts.body, color: colors.textTertiary, fontStyle: 'italic', paddingVertical: 8 },
   scraperList: { gap: 8, marginBottom: 22 },
   scraperRow: {
     flexDirection: 'row',

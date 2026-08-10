@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Pricely.Api/Pricely.Api.csproj" />
+  <Project Path="Pricely.Core/Pricely.Core.csproj" />
+  <Project Path="Pricely.Infrastructure/Pricely.Infrastructure.csproj" />
+</Solution>

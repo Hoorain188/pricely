@@ -1,6 +1,8 @@
 # Pricely API
 
-ASP.NET Core 8 Web API backing the Pricely app. This branch covers **authentication only** — signup, email verification, login, password reset, and sessions.
+ASP.NET Core 8 Web API backing the Pricely app: authentication (signup, email verification, login, password reset, sessions) and back-office team management (approvals, invites, roles).
+
+The Expo app calls this directly — see `Pricely.pk/frontend.apk/config/api.ts`, which finds the API automatically in development by reusing the address Expo serves from, so there's no IP to keep updating.
 
 ## Getting it running
 
@@ -49,6 +51,8 @@ Tables were created by hand in SQL rather than generated from C#, so **the datab
 |---|---|
 | `001_initial_schema.sql` | The original 18 tables |
 | `002_auth_columns.sql` | Added `users.email_verified_at` and `team_requests.user_id` |
+| `003_team_and_hardening.sql` | Code attempt counter, invite expiry, indexes |
+| `004_bootstrap_first_admin.sql` | Promotes the very first admin (run once, by hand) |
 
 If you change the schema, add a numbered file here and run it — don't only change it in pgAdmin, or nobody else gets the change.
 
@@ -60,6 +64,7 @@ If you change the schema, add a numbered file here and run it — don't only cha
 | POST | `/api/auth/verify-signup` | Confirm the code |
 | POST | `/api/auth/login` | Sign in |
 | POST | `/api/auth/forgot-password` | Email a reset code |
+| POST | `/api/auth/resend-code` | Reissue a code for the verify screen's "Resend" |
 | POST | `/api/auth/verify-reset-code` | Check the reset code (doesn't spend it) |
 | POST | `/api/auth/reset-password` | Set a new password |
 | POST | `/api/auth/refresh` | New access token from a refresh token |
@@ -83,9 +88,9 @@ If you change the schema, add a numbered file here and run it — don't only cha
 | PATCH | `/members/{id}/role` | **Admin only** |
 | DELETE | `/members/{id}` | **Admin only** |
 
-Errors come back as `{ "code": "...", "message": "..." }`. Switch on `code`, show `message`.
+Errors always come back as `{ "code": "...", "message": "..." }` — including validation failures, which are normalised into that shape so the app only ever has one error format to handle. Switch on `code`, show `message`.
 
-Codes to handle in the app: `email_taken`, `invalid_credentials`, `email_not_verified`, `pending_approval`, `account_disabled`, `invalid_code`, `invalid_invite`, `already_member`, `already_invited`, `already_reviewed`, `self_approval`, `self_demotion`, `self_removal`, `last_admin`, `rate_limited`.
+Codes to handle in the app: `validation_error`, `email_taken`, `invalid_credentials`, `email_not_verified`, `pending_approval`, `account_disabled`, `invalid_code`, `invalid_invite`, `already_member`, `already_invited`, `already_reviewed`, `self_approval`, `self_demotion`, `self_removal`, `last_admin`, `rate_limited`.
 
 Roles are always lowercase on the wire — `admin`, `support`, `readonly`, `user` — matching both the Postgres labels and the app's existing union type.
 

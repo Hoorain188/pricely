@@ -164,3 +164,12 @@ Content-Type: application/json
   "name": "New Colleague",
   "password": "TheirPassword123!"
 }
+
+### Resend a code (the verify screen's "Resend" button)
+POST {{host}}/api/auth/resend-code
+Content-Type: application/json
+
+{
+  "email": "shopper@example.com",
+  "purpose": "Signup"
+}

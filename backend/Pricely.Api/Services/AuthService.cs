@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Pricely.Api.Data;
@@ -123,7 +124,7 @@ public class AuthService
 
         // Same message whether the email is unknown or the password is wrong,
         // so this can't be used to discover which emails have accounts.
-        if (user is null || !BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
+        if (user is null || !VerifyPassword(req.Password, user.PasswordHash, email))
             throw new AuthException("invalid_credentials", "Incorrect email or password.", StatusCodes.Status401Unauthorized);
 
         if (user.EmailVerifiedAt is null)
@@ -174,6 +175,36 @@ public class AuthService
         return new AuthStatusResponse(
             "reset_code_sent",
             $"If an account exists for {email}, a reset code is on its way.");
+    }
+
+    /// <summary>
+    /// Reissues a code for someone stuck on the verify screen — the "Resend"
+    /// button. Retires the previous code, so only the newest one works.
+    ///
+    /// Reports the same thing no matter what, for the same reason
+    /// forgot-password does: otherwise it becomes a way to test which emails
+    /// are registered, and which of those have finished verifying.
+    /// </summary>
+    public async Task<AuthStatusResponse> ResendCodeAsync(ResendCodeRequest req, CancellationToken ct)
+    {
+        var email = Normalize(req.Email);
+        var purpose = req.Purpose == CodePurpose.Signup
+            ? VerificationPurpose.Signup
+            : VerificationPurpose.PasswordReset;
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+
+        // A signup code is pointless once the address is already confirmed,
+        // so that case is skipped rather than mailing a code nobody needs.
+        var worthSending = user is not null &&
+            (purpose == VerificationPurpose.PasswordReset || user.EmailVerifiedAt is null);
+
+        if (worthSending)
+            await IssueCodeAsync(email, purpose, ct);
+        else
+            _logger.LogInformation("Resend requested for {Email} with nothing to send", email);
+
+        return new AuthStatusResponse("verification_sent", $"If a code is needed for {email}, a new one is on its way.");
     }
 
     /// <summary>
@@ -286,6 +317,34 @@ public class AuthService
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private static string Normalize(string email) => email.Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// Checks a password, treating an unreadable stored hash as "wrong password"
+    /// rather than letting it escape as a 500.
+    ///
+    /// Rows seeded straight into the database can hold anything in password_hash
+    /// — the existing demo customers hold the literal text
+    /// "REPLACE_ME_NOT_A_REAL_HASH". BCrypt throws SaltParseException on those,
+    /// which produced a 500 for seeded emails and a 401 for unknown ones. That
+    /// difference is exactly the account-enumeration leak the identical error
+    /// message exists to prevent, so both must fail the same way.
+    /// </summary>
+    private bool VerifyPassword(string password, string storedHash, string email)
+    {
+        try
+        {
+            return BCrypt.Net.BCrypt.Verify(password, storedHash);
+        }
+        catch (SaltParseException)
+        {
+            // Worth surfacing: it means a row exists that can never be logged
+            // into, which is a data problem even though it's handled safely.
+            _logger.LogWarning(
+                "Account {Email} has an unusable password hash — login refused. " +
+                "Was this row seeded directly into the database?", email);
+            return false;
+        }
+    }
 
     private static UserDto ToDto(User u) => new(u.Id, u.Name, u.Email, u.Role.ToWire());
 

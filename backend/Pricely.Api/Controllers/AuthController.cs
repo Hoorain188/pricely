@@ -42,6 +42,12 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<AuthStatusResponse>> ForgotPassword(ForgotPasswordRequest req, CancellationToken ct)
         => Ok(await _auth.ForgotPasswordAsync(req, ct));
 
+    /// <summary>Reissues a code for someone stuck on the verify screen ("Resend").</summary>
+    [HttpPost("resend-code")]
+    [EnableRateLimiting(RateLimitPolicies.EmailSending)]
+    public async Task<ActionResult<AuthStatusResponse>> ResendCode(ResendCodeRequest req, CancellationToken ct)
+        => Ok(await _auth.ResendCodeAsync(req, ct));
+
     /// <summary>Checks the reset code so the app can advance to the new-password screen.</summary>
     [HttpPost("verify-reset-code")]
     [EnableRateLimiting(RateLimitPolicies.Sensitive)]

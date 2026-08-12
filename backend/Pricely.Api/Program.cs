@@ -6,6 +6,8 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -184,6 +186,28 @@ builder.Services
         options.JsonSerializerOptions.Converters.Add(
             new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
     });
+
+// Model-validation failures otherwise return ASP.NET's default ProblemDetails,
+// which is both a different shape from every other error the API returns and
+// leaks internal type names (e.g. "could not be converted to
+// Pricely.Api.Dtos.ChangeRoleRequest"). This makes them look like the rest.
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var message = context.ModelState
+            // Keys starting with "$" are JSON-parse positions and the bare
+            // action-parameter name ("req") is an implementation detail — both
+            // produce messages that mean nothing to whoever is using the app.
+            .Where(kvp => !kvp.Key.StartsWith('$') && kvp.Key != "req")
+            .SelectMany(kvp => kvp.Value?.Errors ?? Enumerable.Empty<ModelError>())
+            .Select(e => e.ErrorMessage)
+            .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m) && !m.Contains("Pricely.Api"))
+            ?? "Some of those details aren't valid. Please check and try again.";
+
+        return new BadRequestObjectResult(new { code = "validation_error", message });
+    };
+});
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>

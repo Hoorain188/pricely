@@ -33,6 +33,17 @@ public record VerifyCodeRequest(
 public record ForgotPasswordRequest(
     [Required, EmailAddress] string Email);
 
+/// <summary>Which flow the caller is stuck in, so the right kind of code is reissued.</summary>
+public enum CodePurpose
+{
+    Signup,
+    PasswordReset
+}
+
+public record ResendCodeRequest(
+    [Required, EmailAddress] string Email,
+    CodePurpose Purpose);
+
 public record ResetPasswordRequest(
     [Required, EmailAddress] string Email,
     [Required, RegularExpression(@"^\d{6}$", ErrorMessage = "Code must be 6 digits.")] string Code,

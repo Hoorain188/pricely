@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/app-config.json",
   "expo": {
     "name": "mobile",
     "slug": "mobile",
@@ -23,7 +24,8 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "usesCleartextTraffic": true
     },
     "web": {
       "favicon": "./assets/favicon.png"

@@ -36,203 +36,55 @@ export interface Subcategory {
 }
 
 // ---------------------------------------------------------------------------
-//  TOP-LEVEL CATEGORIES (home screen tabs). "electronics" chhatri hai jismein
-//  mobiles/laptops/tv sab sub ke taur par aate hain.
+//  10 FIXED TECH CATEGORIES — dono stores (Telemart + Mega.pk) same slugs
 // ---------------------------------------------------------------------------
-const MOCK_CATEGORIES: Category[] = [
-  { key: 'all', label: 'All' },
-  { key: 'electronics', label: 'Electronics' },
-  { key: 'fashion', label: 'Fashion' },
-  { key: 'home', label: 'Home & Living' },
-  { key: 'beauty', label: 'Beauty' },
-  { key: 'appliances', label: 'Appliances' },
-  { key: 'watches', label: 'Watches & Accessories' },
+const CATEGORIES: Category[] = [
+  { key: 'mobiles_tablets',     label: 'Mobiles & Tablets' },
+  { key: 'laptops_computers',  label: 'Laptops & Computers' },
+  { key: 'tv_entertainment',   label: 'TVs & Entertainment' },
+  { key: 'home_appliances',    label: 'Home Appliances' },
+  { key: 'kitchen_appliances', label: 'Kitchen Appliances' },
+  { key: 'cameras',            label: 'Cameras' },
+  { key: 'audio',              label: 'Audio' },
+  { key: 'wearables',          label: 'Wearables' },
+  { key: 'gaming',             label: 'Gaming' },
+  { key: 'accessories',        label: 'Accessories' },
 ];
 
-const MOCK_TRENDING = ['Redmi Note 13', 'Air Fryer 5L', 'PS5 slim', 'iPhone 15', 'Nike Air Max 90', 'Smart Watch'];
+const MOCK_TRENDING = ['Redmi Note 13', 'Air Fryer 5L', 'PS5 slim', 'iPhone 15', 'Smart Watch', 'MacBook Air'];
 
 const MOCK_DEALS: Deal[] = [
   { id: '1', name: 'Redmi Note 13 8/256', price: 'Rs 54,999', discount: '12%', store: 'Telemart', imageSeed: 'redmi-note-13' },
-  { id: '2', name: 'Anker 20000mAh PB', price: 'Rs 8,450', discount: '20%', store: 'Daraz', imageSeed: 'anker-powerbank' },
-  { id: '3', name: 'Nike Air Max 90', price: 'Rs 15,200', discount: '18%', store: 'Daraz', imageSeed: 'nike-air-max' },
-  { id: '4', name: 'Samsung 55" 4K TV', price: 'Rs 124,999', discount: '15%', store: 'Amazon', imageSeed: 'samsung-tv' },
-  { id: '5', name: 'Xiaomi Air Fryer 5L', price: 'Rs 11,999', discount: '10%', store: 'Mega.pk', imageSeed: 'air-fryer' },
+  { id: '2', name: 'Anker 20000mAh PB', price: 'Rs 8,450', discount: '20%', store: 'Mega.pk', imageSeed: 'anker-powerbank' },
+  { id: '3', name: 'Samsung 55" 4K TV', price: 'Rs 124,999', discount: '15%', store: 'Mega.pk', imageSeed: 'samsung-tv' },
+  { id: '4', name: 'Xiaomi Air Fryer 5L', price: 'Rs 11,999', discount: '10%', store: 'Mega.pk', imageSeed: 'air-fryer' },
+  { id: '5', name: 'MacBook Air M2', price: 'Rs 289,999', discount: '8%', store: 'Telemart', imageSeed: 'macbook-air' },
 ];
-
-// ===========================================================================
-//  SUB-CATEGORY DEFINITIONS
-//  Har sub-category ka ek `query` hai jo DB ke `category` column se match karta
-//  hai (browse endpoint isi se products laata hai). `imageTag` icon ke liye.
-//  Telemart: iphones, androids, audio, gaming, power banks, beauty, fashion, appliances
-//  Mega.pk: mobiles, headphones, gaming_consoles, power_banks, + detailed subs
-//  NormalizeCategory (backend) dono ko milata hai via contains matching.
-// ===========================================================================
-interface SubDef { key: string; label: string; imageTag: string; query: string; }
-
-const SUBDEFS: Record<string, SubDef[]> = {
-  electronics: [
-    { key: 'iphones', label: 'iPhones', imageTag: 'iphone', query: 'iphones' },
-    { key: 'androids', label: 'Android', imageTag: 'smartphone', query: 'androids' },
-    { key: 'mobiles', label: 'All Mobiles', imageTag: 'smartphone', query: 'mobiles' },
-    { key: 'laptops', label: 'Laptops', imageTag: 'laptop', query: 'laptops' },
-    { key: 'tablets', label: 'Tablets', imageTag: 'tablet', query: 'tablets' },
-    { key: 'monitors', label: 'Monitors', imageTag: 'monitor', query: 'monitors' },
-    { key: 'cameras', label: 'Cameras', imageTag: 'camera', query: 'cameras' },
-    { key: 'tvs', label: 'Televisions', imageTag: 'television', query: 'televisions' },
-    { key: 'printers', label: 'Printers', imageTag: 'monitor', query: 'printers' },
-    { key: 'gaming', label: 'Gaming', imageTag: 'videogames', query: 'gaming' },
-    { key: 'audio', label: 'Audio', imageTag: 'headphones', query: 'audio' },
-    { key: 'powerbanks', label: 'Power Banks', imageTag: 'battery', query: 'power_banks' },
-    { key: 'desktops', label: 'Desktops', imageTag: 'monitor', query: 'desktop_computers' },
-    { key: 'projectors', label: 'Projectors', imageTag: 'monitor', query: 'projectors' },
-    { key: 'accessories', label: 'Accessories', imageTag: 'package', query: 'accessories' },
-  ],
-  appliances: [
-    { key: 'all-appliances', label: 'All', imageTag: 'plug', query: 'appliances' },
-    { key: 'acs', label: 'Air Conditioners', imageTag: 'airconditioner', query: 'air_conditioners' },
-    { key: 'fridge', label: 'Refrigerators', imageTag: 'refrigerator', query: 'fridge' },
-    { key: 'washing', label: 'Washing Machines', imageTag: 'washingmachine', query: 'washing_machine' },
-    { key: 'microwave', label: 'Microwave Ovens', imageTag: 'kitchenware', query: 'microwave' },
-    { key: 'freezer', label: 'Freezers', imageTag: 'refrigerator', query: 'freezer' },
-    { key: 'fans', label: 'Fans', imageTag: 'fan', query: 'fans' },
-  ],
-  watches: [
-    { key: 'smart', label: 'Smart Watches', imageTag: 'smartwatch', query: 'watches' },
-    { key: 'power', label: 'Power Banks', imageTag: 'battery', query: 'power_banks' },
-  ],
-  beauty: [
-    { key: 'all-beauty', label: 'All Beauty', imageTag: 'sparkles', query: 'beauty' },
-    { key: 'skincare', label: 'Skincare', imageTag: 'skincare', query: 'skincare' },
-    { key: 'makeup', label: 'Makeup', imageTag: 'makeup', query: 'makeup' },
-    { key: 'fragrances', label: 'Fragrances', imageTag: 'perfume', query: 'fragrances' },
-  ],
-  fashion: [
-    { key: 'all-fashion', label: 'All Fashion', imageTag: 'mensfashion', query: 'fashion' },
-    { key: 'menswear', label: "Men's Wear", imageTag: 'mensfashion', query: 'menswear' },
-    { key: 'womenswear', label: "Women's Wear", imageTag: 'womensfashion', query: 'womenswear' },
-    { key: 'footwear', label: 'Footwear', imageTag: 'sneakers', query: 'footwear' },
-  ],
-  home: [
-    { key: 'all-home', label: 'All Home', imageTag: 'furniture', query: 'home' },
-    { key: 'furniture', label: 'Furniture', imageTag: 'furniture', query: 'furniture' },
-    { key: 'kitchenware', label: 'Kitchenware', imageTag: 'kitchenware', query: 'kitchenware' },
-    { key: 'bedding', label: 'Bedding', imageTag: 'bedroom', query: 'bedding' },
-    { key: 'lighting', label: 'Lighting', imageTag: 'lamp', query: 'lighting' },
-  ],
-};
-
-const CATEGORY_TO_SUB: Record<string, string> = {
-  // Phones
-  mobiles: 'mobiles', iphones: 'iphones', androids: 'androids',
-  // Laptops & Computing
-  laptops: 'laptops', tablets: 'tablets', monitors: 'monitors', desktop_computers: 'desktops', servers: 'desktops',
-  // Cameras
-  cameras: 'cameras', digital_cameras: 'cameras', mirrorless_cameras: 'cameras', camera_lenses: 'cameras',
-  // TV & Printers & Gaming & Audio
-  televisions: 'tvs', printers: 'printers', inkjet_printers: 'printers', multifunction_printers: 'printers',
-  gaming: 'gaming', gaming_consoles: 'gaming', audio: 'audio', headphones: 'audio', home_theater: 'audio',
-  power_banks: 'powerbanks', 'power banks': 'powerbanks', projectors: 'projectors', accessories: 'accessories',
-  // Appliances
-  appliances: 'all-appliances', air_conditioners: 'acs', fridge: 'fridge',
-  washing_machine: 'washing', microwave: 'microwave', freezer: 'freezer', fans: 'fans',
-  kitchen_appliances: 'all-appliances', irons: 'all-appliances', heaters: 'all-appliances', geyser: 'all-appliances',
-  // Beauty
-  beauty: 'all-beauty', skincare: 'skincare', makeup: 'makeup', fragrances: 'fragrances',
-  // Fashion
-  fashion: 'all-fashion', menswear: 'menswear', womenswear: 'womenswear', footwear: 'footwear',
-  // Home
-  home: 'all-home', furniture: 'furniture', kitchenware: 'kitchenware', bedding: 'bedding', lighting: 'lighting',
-  // Watches
-  watches: 'smart',
-};
-
-// ---------------------------------------------------------------------------
-//  Fashion / beauty / home — now backed by Telemart data after re-sync.
-//  MOCK_SUBCATEGORIES only used as fallback if no SUBDEFS entry exists.
-// ---------------------------------------------------------------------------
-const MOCK_SUBCATEGORIES: Record<string, Subcategory[]> = {
-  home: [
-    { key: 'furniture', label: 'Furniture', imageTag: 'furniture', products: [] },
-    { key: 'kitchenware', label: 'Kitchenware', imageTag: 'kitchenware', products: [] },
-    { key: 'bedding', label: 'Bedding', imageTag: 'bedroom', products: [] },
-    { key: 'lighting', label: 'Lighting', imageTag: 'lamp', products: [] },
-  ],
-};
-
-// build a Subcategory[] from SubDef[] (products khaali — CategoryScreen API se bhar deta hai)
-function subsFromDefs(defs: SubDef[]): Subcategory[] {
-  return defs.map((d) => ({ key: d.key, label: d.label, imageTag: d.imageTag, products: [] }));
-}
-
-// sub key -> DB query term (CategoryScreen isse browse call karta hai)
-export function subQueryFor(categoryKey: string, subKey: string): string {
-  const defs = SUBDEFS[categoryKey];
-  const found = defs?.find((d) => d.key === subKey);
-  return found?.query || subKey;
-}
 
 export const dealImageUri = (seed: string) => `https://picsum.photos/seed/${seed}/300/300`;
 
-const fakeLatency = <T,>(data: T) => new Promise<T>((resolve) => setTimeout(() => resolve(data), 200));
+const fakeLatency = <T,>(data: T) => new Promise<T>((resolve) => setTimeout(() => resolve(data), 100));
 
 // ---------------------------------------------------------------------------
-//  CATEGORIES — agar store diya ho to sirf us store ki asal categories (DB se).
-//  Store na ho to poori list.
+//  CATEGORIES — same 10 categories for everyone. Store diya ho ya na ho.
+//  Agar store-specific filtering chahiye to CategoryScreen storeFilter
+//  browse API ko pass karta hai — categories list same rehti hai.
 // ---------------------------------------------------------------------------
-// SubDef definition for Mega.pk specific electronics subcategories:
-// Mega has detailed categories (headphones, gaming_consoles, power_banks etc.)
-// but the browse NormalizeCategory maps them to unified names.
-const MEGA_ELECTRONICS_SUBDEFS: SubDef[] = [
-  { key: 'mobiles', label: 'Mobiles', imageTag: 'smartphone', query: 'mobiles' },
-  { key: 'laptops', label: 'Laptops', imageTag: 'laptop', query: 'laptops' },
-  { key: 'tablets', label: 'Tablets', imageTag: 'tablet', query: 'tablets' },
-  { key: 'monitors', label: 'Monitors', imageTag: 'monitor', query: 'monitors' },
-  { key: 'cameras', label: 'Cameras', imageTag: 'camera', query: 'cameras' },
-  { key: 'tvs', label: 'Televisions', imageTag: 'television', query: 'televisions' },
-  { key: 'printers', label: 'Printers', imageTag: 'monitor', query: 'printers' },
-  { key: 'gaming', label: 'Gaming', imageTag: 'videogames', query: 'gaming' },
-  { key: 'audio', label: 'Audio', imageTag: 'headphones', query: 'audio' },
-  { key: 'powerbanks', label: 'Power Banks', imageTag: 'battery', query: 'power_banks' },
-  { key: 'watches', label: 'Watches', imageTag: 'smartwatch', query: 'watches' },
-  { key: 'projectors', label: 'Projectors', imageTag: 'monitor', query: 'projectors' },
-  { key: 'accessories', label: 'Accessories', imageTag: 'package', query: 'accessories' },
-];
-
 export async function getCategories(store?: string): Promise<Category[]> {
-  if (!store) return fakeLatency(MOCK_CATEGORIES);
-
-  const cleanStore = store.trim().toLowerCase();
-  if (cleanStore === 'mega.pk' || cleanStore === 'megapk') {
-    // Mega.pk has ONLY electronics
-    return fakeLatency([{ key: 'electronics', label: 'Electronics' }]);
-  }
-
-  if (cleanStore === 'telemart') {
-    // Telemart has data across all categories
-    return fakeLatency(MOCK_CATEGORIES.filter((c) => c.key !== 'all'));
-  }
-
-  try {
-    const dbCats = await fetchStoreCategories(store); // [{category, count}]
-    if (dbCats && dbCats.length > 0) {
-      const hasElectronics = dbCats.some((c) => CATEGORY_TO_SUB[c.category]);
-      const hasAppliances = dbCats.some((c) =>
-        ['air_conditioners', 'fridge', 'washing_machine', 'microwave', 'freezer', 'fans'].includes(c.category));
-
-      const cats: Category[] = [];
-      if (hasElectronics) cats.push({ key: 'electronics', label: 'Electronics' });
-      if (hasAppliances || dbCats.some((c) => c.category === 'appliances'))
-        cats.push({ key: 'appliances', label: 'Appliances' });
-      if (dbCats.some((c) => c.category === 'watches')) cats.push({ key: 'watches', label: 'Watches' });
-      if (dbCats.some((c) => c.category === 'beauty')) cats.push({ key: 'beauty', label: 'Beauty' });
-      if (dbCats.some((c) => c.category === 'fashion')) cats.push({ key: 'fashion', label: 'Fashion' });
-
-      return cats.length > 0 ? cats : [{ key: 'electronics', label: 'Electronics' }];
+  // Optionally filter to only categories that exist for this store
+  if (store) {
+    try {
+      const dbCats = await fetchStoreCategories(store);
+      if (dbCats && dbCats.length > 0) {
+        const dbKeys = new Set(dbCats.map((c) => c.category?.toLowerCase()));
+        const filtered = CATEGORIES.filter((c) => dbKeys.has(c.key));
+        if (filtered.length > 0) return filtered;
+      }
+    } catch {
+      // DB offline — return all
     }
-  } catch {
-    // DB offline — mock
   }
-  return fakeLatency(MOCK_CATEGORIES.filter((c) => c.key !== 'all'));
+  return fakeLatency(CATEGORIES);
 }
 
 export async function getTrendingSearches(): Promise<string[]> {
@@ -262,25 +114,21 @@ export async function getBestDrops(): Promise<Deal[]> {
 }
 
 // ---------------------------------------------------------------------------
-//  SUB-CATEGORIES — store-aware. Electronics/appliances/watches DB-backed defs
-//  se; fashion/beauty/home mock.
+//  SUB-CATEGORIES — ab koi subcategory nahi, har category seedhi final hai.
+//  Lekin CategoryScreen ko ek Subcategory[] chahiye, to ek hi "All" item de do.
 // ---------------------------------------------------------------------------
-export async function getSubcategories(categoryKey: string, store?: string): Promise<Subcategory[]> {
-  const cleanStore = (store || '').trim().toLowerCase();
-  
-  if (cleanStore === 'mega.pk' || cleanStore === 'megapk') {
-    // Mega.pk only has electronics subcategories
-    if (categoryKey === 'electronics' || categoryKey === 'all') {
-      return fakeLatency(subsFromDefs(MEGA_ELECTRONICS_SUBDEFS));
-    }
-    return fakeLatency([]);
-  }
+export async function getSubcategories(categoryKey: string, _store?: string): Promise<Subcategory[]> {
+  const cat = CATEGORIES.find((c) => c.key === categoryKey);
+  if (!cat) return fakeLatency([]);
+  // Single "All" sub with the category's own query
+  return fakeLatency([
+    { key: categoryKey, label: cat.label, imageTag: 'package', products: [] },
+  ]);
+}
 
-  const defs = SUBDEFS[categoryKey];
-  if (defs) {
-    return fakeLatency(subsFromDefs(defs));
-  }
-  return fakeLatency(MOCK_SUBCATEGORIES[categoryKey] || []);
+// sub key -> DB query term. Ab seedha category key hi query hai.
+export function subQueryFor(_categoryKey: string, subKey: string): string {
+  return subKey; // direct DB slug
 }
 
 export async function searchProducts(query: string, store?: string): Promise<SubcategoryProduct[]> {

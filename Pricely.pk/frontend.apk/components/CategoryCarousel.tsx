@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Image, Animated, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Animated, StyleSheet, Dimensions } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import LottieSearchIcon from './Lottiesearchicon';
@@ -22,12 +23,16 @@ const SIDE_PADDING = 20;
 // `lock` value pins a specific photo per category so it doesn't change
 // randomly on every reload — e.g. Mobiles always shows an actual phone.
 const CATEGORY_IMAGE: Record<string, { tag: string; lock: number }> = {
-    electronics: { tag: 'iphone', lock: 34 },
-    fashion: { tag: 'fashion', lock: 12 },
-    beauty: { tag: 'cosmetics', lock: 8 },
-    home: { tag: 'interior', lock: 45 },
-    appliances: { tag: 'kitchen', lock: 19 },
-    watches: { tag: 'wristwatch', lock: 27 },
+    mobiles_tablets: { tag: 'iphone', lock: 34 },
+    laptops_computers: { tag: 'laptop', lock: 12 },
+    tv_entertainment: { tag: 'television', lock: 8 },
+    home_appliances: { tag: 'fridge', lock: 45 },
+    kitchen_appliances: { tag: 'kitchen', lock: 19 },
+    cameras: { tag: 'camera', lock: 27 },
+    audio: { tag: 'headphones', lock: 5 },
+    wearables: { tag: 'smartwatch', lock: 44 },
+    gaming: { tag: 'gaming', lock: 11 },
+    accessories: { tag: 'charger', lock: 63 },
 };
 export const loremflickrUri = (tag: string, lock: number) => `https://loremflickr.com/500/700/${tag}?lock=${lock}`;
 
@@ -124,7 +129,13 @@ export default function CategoryCarousel({ categories, storeCount, onExplore, on
                     return (
                         <TouchableOpacity activeOpacity={0.92} onPress={() => onExplore(item.key)}>
                             <Animated.View style={[styles.card, { marginRight: CARD_SPACING, transform: [{ scale }], opacity }]}>
-                                <Image source={{ uri: categoryImageUri(item.key) }} style={styles.cardImage} resizeMode="cover" />
+                                <Image
+                                    source={{ uri: categoryImageUri(item.key) }}
+                                    style={styles.cardImage}
+                                    contentFit="cover"
+                                    transition={200}
+                                    cachePolicy="memory-disk"
+                                />
                                 {/* Same light-green-to-navy direction as the hero background,
                     just steeper, so each card's text stays legible. */}
                                 <LinearGradient

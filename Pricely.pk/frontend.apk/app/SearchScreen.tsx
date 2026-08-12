@@ -6,14 +6,17 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Image,
   FlatList,
   Dimensions,
+  BackHandler,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Search, SlidersHorizontal, Flame, X, ArrowLeft } from 'lucide-react-native';
+import { Flame } from 'lucide-react-native';
+import LottieLoader from '../components/Lottieloader';
+import LottieBackButton from '../components/Lottiebackbutton';
 import { colors, fonts, radii, shadows, gradients } from '../theme/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import { searchProducts, SubcategoryProduct } from '../services/catalogService';
@@ -30,31 +33,57 @@ export default function SearchScreen() {
   const [query, setQuery] = useState(route.params?.query || '');
   const [results, setResults] = useState<SubcategoryProduct[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedStore, setSelectedStore] = useState<string>('All');
+  const [selectedStore, setSelectedStore] = useState<string>(route.params?.storeFilter || 'All');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (route.params?.query) {
+    if (route.params?.query !== undefined) {
       setQuery(route.params.query);
     }
-  }, [route.params?.query]);
+    if (route.params?.storeFilter !== undefined) {
+      setSelectedStore(route.params.storeFilter);
+    }
+  }, [route.params?.query, route.params?.storeFilter]);
 
   useEffect(() => {
-    if (!query.trim()) {
+    const onBackPress = () => {
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate('Home');
+      }
+      return true;
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [navigation]);
+
+  useEffect(() => {
+    const searchTerm = query.trim();
+    if (!searchTerm) {
       setResults([]);
+      setErrorMsg(null);
       return;
     }
 
     setLoading(true);
-    searchProducts(query).then((res) => {
-      setResults(res);
-      setLoading(false);
-    });
-  }, [query]);
+    setErrorMsg(null);
+    const storeParam = selectedStore !== 'All' ? selectedStore : undefined;
+    searchProducts(searchTerm)
+      .then((res) => {
+        setResults(res);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setLoading(false);
+        setErrorMsg(err?.message || "Can't reach server — check connection");
+      });
+  }, [query, selectedStore]);
 
-  const filteredResults = results.filter((item, index) => {
+  const filteredResults = results.filter((item) => {
     if (selectedStore === 'All') return true;
-    const stores = ['Daraz', 'Telemart', 'Mega.pk', 'Amazon'];
-    return stores[index % stores.length] === selectedStore;
+    const itemStore = item.store || '';
+    return itemStore.toLowerCase() === selectedStore.toLowerCase();
   });
 
   return (
@@ -67,16 +96,13 @@ export default function SearchScreen() {
         end={{ x: 1, y: 0 }}
         style={styles.header}
       >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <ArrowLeft size={22} color={colors.onDarkPrimary} />
-        </TouchableOpacity>
+        <LottieBackButton
+          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Home'))}
+          size={30}
+        />
 
         <View style={styles.searchBar}>
-          <Search size={18} color="rgba(255,255,255,0.7)" />
+          <Ionicons name="search" size={18} color="rgba(255,255,255,0.7)" />
           <TextInput
             value={query}
             onChangeText={setQuery}
@@ -87,7 +113,7 @@ export default function SearchScreen() {
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => setQuery('')}>
-              <X size={16} color="rgba(255,255,255,0.8)" />
+              <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.8)" />
             </TouchableOpacity>
           )}
         </View>
@@ -95,7 +121,7 @@ export default function SearchScreen() {
 
       {/* Store Filter Pills */}
       <View style={styles.filterRow}>
-        {['All', 'Daraz', 'Telemart', 'Mega.pk', 'Amazon'].map((store) => {
+        {['All', 'Telemart', 'Daraz', 'Mega.pk', 'Amazon'].map((store) => {
           const active = selectedStore === store;
           return (
             <TouchableOpacity
@@ -111,7 +137,14 @@ export default function SearchScreen() {
 
       {/* Main Content */}
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {query.trim().length === 0 ? (
+        {loading ? (
+          <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60 }}>
+            <LottieLoader size={48} />
+            <Text style={{ fontSize: 13, fontFamily: fonts.body, color: colors.textSecondary, marginTop: 12 }}>
+              Searching products...
+            </Text>
+          </View>
+        ) : query.trim().length === 0 ? (
           <View style={styles.recentSection}>
             <Text style={styles.sectionTitle}>Popular & Recent Searches</Text>
             <View style={styles.recentGrid}>
@@ -131,34 +164,44 @@ export default function SearchScreen() {
           <>
             <View style={styles.resultsHeader}>
               <Text style={styles.resultsTitle}>
-                {loading ? 'Searching...' : `${filteredResults.length} Products Found`}
+                {loading ? 'Searching backend...' : `${filteredResults.length} Products Found`}
               </Text>
             </View>
 
             <View style={styles.grid}>
               {filteredResults.map((product, i) => (
                 <TouchableOpacity
-                  key={`${product.name}-${i}`}
+                  key={`${product.handle || product.name}-${i}`}
                   style={styles.productCard}
                   activeOpacity={0.85}
                   onPress={() =>
                     navigation.navigate('ProductDetail', {
+                      handle: product.handle,
+                      url: product.url,
                       productName: product.name,
                       currentPrice: product.price,
+                      imageUrl: product.imageUrl,
                     })
                   }
                 >
                   <View style={styles.imageWrap}>
                     <Image
-                      source={{ uri: loremflickrUri(product.pictureTag || 'product', i + 1) }}
+                      source={{ uri: product.imageUrl || loremflickrUri(product.pictureTag || 'product', i + 1) }}
                       style={styles.image}
-                      resizeMode="cover"
+                      contentFit="contain"
+                      transition={200}
+                      cachePolicy="memory-disk"
                     />
                   </View>
-                  <Text style={styles.productName} numberOfLines={1}>
+                  <Text style={styles.productName} numberOfLines={2}>
                     {product.name}
                   </Text>
                   <Text style={styles.productPrice}>{product.price}</Text>
+                  {product.store && (
+                    <Text style={{ fontSize: 10, fontFamily: fonts.label, color: colors.accentSolid, marginTop: 2 }}>
+                      {product.store}
+                    </Text>
+                  )}
                 </TouchableOpacity>
               ))}
             </View>
@@ -167,7 +210,9 @@ export default function SearchScreen() {
               <View style={styles.emptyState}>
                 <Ionicons name="search-outline" size={48} color={colors.textTertiary} />
                 <Text style={styles.emptyTitle}>No products found</Text>
-                <Text style={styles.emptySubtitle}>Try searching for "Redmi", "iPhone", "Nike", or "TV"</Text>
+                <Text style={styles.emptySubtitle}>
+                  Try searching for "mobile", "iphone", "redmi", "laptop", or "samsung"
+                </Text>
               </View>
             )}
           </>

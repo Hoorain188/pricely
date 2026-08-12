@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,13 +13,14 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { ExternalLink, Tag } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { colors, fonts, radii, shadows, gradients } from '../theme/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUserStore } from '../context/UserStore';
+import LottieLoader from '../components/Lottieloader';
 import LottieBackButton from '../components/Lottiebackbutton';
 import CustomAlertDialog from '../components/CustomAlertDialog';
 import { fetchProductDetail, fetchMegaPkProductDetail, formatPrice, stripHtml, ProductDetail } from '../services/api';
@@ -48,8 +49,13 @@ export default function ProductDetailScreen() {
   const [loading, setLoading] = useState<boolean>(!!handle || !!productUrl);
   const [selectedImageIdx, setSelectedImageIdx] = useState<number>(0);
 
-  const isFav = isFavorited(fallbackName);
-  const existingAlert = alerts.find((a) => a.name === fallbackName && a.active);
+  const productName = detail?.title || fallbackName;
+  const rawPrice = detail?.variants && detail.variants.length > 0 ? detail.variants[0].price : fallbackPrice;
+  const currentPrice = formatPrice(rawPrice);
+  const images = detail?.images && detail.images.length > 0 ? detail.images : fallbackImage ? [fallbackImage] : [];
+
+  const isFav = isFavorited(productName);
+  const existingAlert = alerts.find((a) => a.name === productName && a.active);
   const [alertPrice, setAlertPrice] = useState(existingAlert ? existingAlert.targetPrice.replace(/[^0-9]/g, '') : '50000');
   const alertActive = !!existingAlert;
 
@@ -93,21 +99,26 @@ export default function ProductDetailScreen() {
             setLoading(false);
           }
         });
+    } else {
+      setLoading(false);
     }
     return () => {
       alive = false;
     };
   }, [handle, productUrl]);
 
-  const productName = detail?.title || fallbackName;
-  const rawPrice = detail?.variants && detail.variants.length > 0 ? detail.variants[0].price : fallbackPrice;
-  const currentPrice = formatPrice(rawPrice);
-  const images = detail?.images && detail.images.length > 0 ? detail.images : fallbackImage ? [fallbackImage] : [];
-
   const handleOpenStore = (urlToOpen?: string) => {
     const targetUrl = urlToOpen || detail?.url;
     if (targetUrl) {
-      Linking.openURL(targetUrl).catch((err) => console.warn('Could not open store URL', err));
+      try {
+        const fullUrl = targetUrl.startsWith('http://') || targetUrl.startsWith('https://') ? targetUrl : `https://${targetUrl}`;
+        const parsed = new URL(fullUrl);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+          Linking.openURL(parsed.href).catch((err) => console.warn('Could not open store URL', err));
+        }
+      } catch {
+        // Invalid URL format
+      }
     }
   };
 
@@ -118,17 +129,23 @@ export default function ProductDetailScreen() {
   };
 
   const handleBack = () => {
-    navigation.navigate('Category');
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Home');
+    }
   };
 
-  useEffect(() => {
-    const onBackPress = () => {
-      navigation.navigate('Category');
-      return true;
-    };
-    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-    return () => subscription.remove();
-  }, [navigation]);
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        handleBack();
+        return true;
+      };
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => subscription.remove();
+    }, [navigation])
+  );
 
   const handleLike = () => {
     toggleFavorite({ name: productName, price: currentPrice });
@@ -172,7 +189,7 @@ export default function ProductDetailScreen() {
 
       {loading ? (
         <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color="#0E6B4F" />
+          <LottieLoader size={54} />
           <Text style={styles.loadingText}>Fetching product data from backend...</Text>
         </View>
       ) : (
@@ -318,34 +335,37 @@ export default function ProductDetailScreen() {
           {/* Compare Stores */}
           <Text style={styles.sectionHeader}>Compare Stores</Text>
           <View style={styles.storesBlock}>
-            {STORES_COMPARE.map((store, i) => (
-              <View key={store.name} style={styles.storeRow}>
-                <View style={styles.storeLogoBadge}>
-                  <View style={[styles.storeInitialBox, { backgroundColor: store.color }]}>
-                    <Text style={styles.storeInitialText}>{store.name[0]}</Text>
+            {STORES_COMPARE.map((store) => {
+              const isCurrentStore = store.name.toLowerCase() === (detail?.store || 'Telemart').toLowerCase();
+              return (
+                <View key={store.name} style={styles.storeRow}>
+                  <View style={styles.storeLogoBadge}>
+                    <View style={[styles.storeInitialBox, { backgroundColor: store.color }]}>
+                      <Text style={styles.storeInitialText}>{store.name[0]}</Text>
+                    </View>
+                    <View>
+                      <Text style={styles.storeName}>{store.name}</Text>
+                      <Text style={styles.storeDomain}>{store.domain}</Text>
+                    </View>
                   </View>
-                  <View>
-                    <Text style={styles.storeName}>{store.name}</Text>
-                    <Text style={styles.storeDomain}>{store.domain}</Text>
-                  </View>
-                </View>
 
-                <View style={styles.storeActions}>
-                  <Text style={styles.storePrice}>
-                    {i === 0 ? currentPrice : store.price}
-                  </Text>
-                  <TouchableOpacity
-                    style={[styles.buyButton, !store.inStock && styles.buyButtonDisabled]}
-                    disabled={!store.inStock}
-                    onPress={() => handleOpenStore(i === 0 ? detail?.url : undefined)}
-                  >
-                    <Text style={styles.buyButtonText}>
-                      {store.inStock ? 'Go to Store' : 'Out of stock'}
+                  <View style={styles.storeActions}>
+                    <Text style={styles.storePrice}>
+                      {isCurrentStore ? currentPrice : store.price}
                     </Text>
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.buyButton, !store.inStock && styles.buyButtonDisabled]}
+                      disabled={!store.inStock}
+                      onPress={() => handleOpenStore(isCurrentStore ? detail?.url : undefined)}
+                    >
+                      <Text style={styles.buyButtonText}>
+                        {store.inStock ? 'Go to Store' : 'Out of stock'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </ScrollView>
       )}

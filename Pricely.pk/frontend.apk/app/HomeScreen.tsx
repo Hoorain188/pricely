@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, TextInput, TouchableOpacity, Image, Animated, StyleSheet, Easing } from 'react-native';
+import { BackHandler, View, Text, ScrollView, TextInput, TouchableOpacity, Animated, StyleSheet, Easing } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { Flame, ChevronRight, ChevronLeft } from 'lucide-react-native';
+import { Flame } from 'lucide-react-native';
 import LottieHamburger from '../components/LottieHamburger';
 import Sidebar from '../components/Sidebar';
 import CategoryCarousel from '../components/CategoryCarousel';
@@ -11,7 +12,6 @@ import { useAuthStore } from '../context/AuthContext';
 import { useCategories, useTrendingSearches, useBestDrops } from '../hooks/useCatalog';
 import { dealImageUri, Category, Deal } from '../services/catalogService';
 
-const CATEGORY_BASE_COUNT = 4; // All + 3 always visible; rest reveal on "See more"
 const DEALS_COLLAPSED_COUNT = 2;
 const DEALS_EXPANDED_COUNT = 4;
 
@@ -51,7 +51,9 @@ function StoreLogo({ store }: { store: Store }) {
       <Image
         source={{ uri: logoUri(store.domain) }}
         style={styles.storeLogoImage}
-        resizeMode="contain"
+        contentFit="contain"
+        transition={200}
+        cachePolicy="memory-disk"
         onError={() => setFailed(true)}
       />
     </View>
@@ -66,31 +68,89 @@ export default function HomeScreen() {
   const { deals } = useBestDrops();
 
   const [activeCategory, setActiveCategory] = useState('all');
-  const [categoriesExpanded, setCategoriesExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [dealsExpanded, setDealsExpanded] = useState(false);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      if (menuOpen) {
+        setMenuOpen(false);
+        return true;
+      }
+      return false;
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [menuOpen]);
 
   // Dynamic — comes from whoever is actually signed in, never hardcoded.
   const firstName = user?.name?.trim().split(' ')[0] || 'there';
 
-  // Categories: base set always visible; the rest slide in from the right
-  // when "See more" is tapped, and slide back out on "See less".
-  const baseCategories = categories.slice(0, CATEGORY_BASE_COUNT);
-  const extraCategories = categories.slice(CATEGORY_BASE_COUNT);
-  const extraAnim = useRef(new Animated.Value(0)).current;
+  // Auto-scroll peek animation for category pills bar (runs on mount + repeats every 10s)
+  const categoryScrollRef = useRef<ScrollView>(null);
+  const userInteractedRef = useRef(false);
+  const touchPauseTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const toggleCategories = () => {
-    const next = !categoriesExpanded;
-    setCategoriesExpanded(next);
-    Animated.timing(extraAnim, {
-      toValue: next ? 1 : 0,
-      duration: 320,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
+  const handleCategoryTouch = () => {
+    userInteractedRef.current = true;
+    if (touchPauseTimerRef.current) {
+      clearTimeout(touchPauseTimerRef.current);
+    }
+    // Pause for 10 seconds on user touch, then auto-resume
+    touchPauseTimerRef.current = setTimeout(() => {
+      userInteractedRef.current = false;
+    }, 10000);
   };
 
-  const extraTranslateX = extraAnim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] });
+  useEffect(() => {
+    if (!categories || categories.length === 0) return;
+
+    let animationFrameId: number;
+
+    const runPeekAnimation = () => {
+      if (userInteractedRef.current) return;
+
+      let scrollPos = 0;
+      const maxScroll = 340;
+      let forward = true;
+
+      const animateScroll = () => {
+        if (userInteractedRef.current) return;
+
+        if (forward) {
+          scrollPos += 0.7;
+          if (scrollPos >= maxScroll) {
+            forward = false;
+          }
+        } else {
+          scrollPos -= 0.7;
+          if (scrollPos <= 0) {
+            scrollPos = 0;
+            categoryScrollRef.current?.scrollTo({ x: 0, animated: true });
+            return;
+          }
+        }
+
+        categoryScrollRef.current?.scrollTo({ x: scrollPos, animated: false });
+        animationFrameId = requestAnimationFrame(animateScroll);
+      };
+
+      animationFrameId = requestAnimationFrame(animateScroll);
+    };
+
+    // Run after 1 second initially
+    const initialTimer = setTimeout(runPeekAnimation, 1000);
+
+    // Repeat every 10 seconds
+    const intervalId = setInterval(runPeekAnimation, 10000);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(intervalId);
+      if (touchPauseTimerRef.current) clearTimeout(touchPauseTimerRef.current);
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    };
+  }, [categories]);
 
   const dealsCount = dealsExpanded ? DEALS_EXPANDED_COUNT : DEALS_COLLAPSED_COUNT;
   const visibleDeals = deals.slice(0, dealsCount);
@@ -136,18 +196,39 @@ export default function HomeScreen() {
           <Text style={styles.sectionTitle}>Shop by store</Text>
           <View style={styles.storeRow}>
             {STORES.map((store) => (
-              <TouchableOpacity key={store.key} style={styles.storeItem} activeOpacity={0.8}>
+              <TouchableOpacity
+                key={store.key}
+                style={styles.storeItem}
+                activeOpacity={0.8}
+                onPress={() => {
+                  if (store.key === 'telemart') {
+                    navigation.navigate('Category', { categoryKey: 'mobiles_tablets', storeFilter: 'Telemart' });
+                  } else if (store.key === 'megapk') {
+                    navigation.navigate('Category', { categoryKey: 'mobiles_tablets', storeFilter: 'Mega.pk' });
+                  } else {
+                    navigation.navigate('Search', { storeFilter: store.name });
+                  }
+                }}
+              >
                 <StoreLogo store={store} />
                 <Text style={styles.storeName}>{store.name}</Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {/* Category pills — base set + animated "see more" reveal.
-              Tapping any real category navigates to CategoryScreen; "All"
-              just filters this screen's own state. */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-            {baseCategories.map((cat: Category) => {
+          {/* Categories section title */}
+          <Text style={styles.sectionTitle}>Categories</Text>
+
+          {/* Category pills — animated auto-scrolling row displaying all categories. */}
+          <ScrollView
+            ref={categoryScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.categoryScroll}
+            onScrollBeginDrag={handleCategoryTouch}
+            onTouchStart={handleCategoryTouch}
+          >
+            {categories.map((cat: Category) => {
               const active = cat.key === activeCategory;
               return (
                 <TouchableOpacity
@@ -160,35 +241,6 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               );
             })}
-
-            {categoriesExpanded && (
-              <Animated.View style={[styles.extraCategoriesRow, { opacity: extraAnim, transform: [{ translateX: extraTranslateX }] }]}>
-                {extraCategories.map((cat: Category) => {
-                  const active = cat.key === activeCategory;
-                  return (
-                    <TouchableOpacity
-                      key={cat.key}
-                      style={[styles.categoryPill, active && styles.categoryPillActive]}
-                      onPress={() => goToCategory(cat.key)}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={[styles.categoryLabel, active && styles.categoryLabelActive]}>{cat.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </Animated.View>
-            )}
-
-            {extraCategories.length > 0 && (
-              <TouchableOpacity style={styles.categoryTogglePill} onPress={toggleCategories} activeOpacity={0.85}>
-                <Text style={styles.categoryToggleLabel}>{categoriesExpanded ? 'Less' : 'More'}</Text>
-                {categoriesExpanded ? (
-                  <ChevronLeft size={14} color={colors.accentSolid} />
-                ) : (
-                  <ChevronRight size={14} color={colors.accentSolid} />
-                )}
-              </TouchableOpacity>
-            )}
           </ScrollView>
 
           {/* Trending searches — 2 rows, scrolls sideways. flexDirection
@@ -199,7 +251,12 @@ export default function HomeScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.trendingScroll}>
             <View style={styles.trendingGrid}>
               {trending.map((term: string) => (
-                <TouchableOpacity key={term} style={styles.trendingChip} activeOpacity={0.8}>
+                <TouchableOpacity
+                  key={term}
+                  style={styles.trendingChip}
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate('Search', { query: term })}
+                >
                   <Flame size={14} color={colors.adminAccent} />
                   <Text style={styles.trendingLabel}>{term}</Text>
                 </TouchableOpacity>
@@ -223,9 +280,22 @@ export default function HomeScreen() {
                 key={deal.id}
                 style={styles.dealCard}
                 activeOpacity={0.85}
-                onPress={() => navigation.navigate('ProductDetail', { productName: deal.name, currentPrice: deal.price })}
+                onPress={() =>
+                  navigation.navigate('ProductDetail', {
+                    handle: deal.handle,
+                    productName: deal.name,
+                    currentPrice: deal.price,
+                    imageUrl: deal.imageUrl,
+                  })
+                }
               >
-                <Image source={{ uri: dealImageUri(deal.imageSeed) }} style={styles.dealImage} resizeMode="cover" />
+                <Image
+                  source={{ uri: deal.imageUrl || dealImageUri(deal.imageSeed) }}
+                  style={styles.dealImage}
+                  contentFit="contain"
+                  transition={200}
+                  cachePolicy="memory-disk"
+                />
                 <Text style={styles.dealName} numberOfLines={1}>
                   {deal.name}
                 </Text>
@@ -253,8 +323,7 @@ export default function HomeScreen() {
           else if (dest === 'Settings') navigation.navigate('Settings');
           else if (dest === 'Help & Support' || dest === 'HelpSupport' || dest === 'Help') navigation.navigate('HelpSupport');
           else if (['Electronics', 'Fashion', 'Home & Living', 'Beauty', 'Appliances', 'Mobiles', 'Categories'].includes(dest)) {
-            const key = dest === 'Mobiles' ? 'electronics' : dest === 'Home & Living' ? 'home' : dest.toLowerCase();
-            navigation.navigate('Category', { categoryKey: key });
+            navigation.navigate('Category', { categoryKey: 'mobiles_tablets' });
           }
         }}
         onLogout={async () => {

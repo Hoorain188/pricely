@@ -15,6 +15,10 @@ var connString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 builder.Services.AddOpenApi();
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("ScraperClient", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 builder.Services.AddScoped<TelemartSyncService>();
 builder.Services.AddScoped<MegaPkSyncService>();
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -59,55 +63,60 @@ app.MapGet("/api/browse", async (string category, string? store, int? seed, AppD
     if (string.IsNullOrWhiteSpace(category))
         return Results.BadRequest("category khaali nahi ho sakta");
 
-    // NormalizeCategoryList returns ALL DB slugs that should match this query
-    // (e.g. "audio" → ["audio","headphones","home_theater"])
-    var norms = NormalizeCategoryList(category);
+    // NormalizeCategory — ab dono stores same slug dete hain
+    var norm = NormalizeCategory(category);
 
     var query = db.StoreListings.AsQueryable();
 
+    // Sirf valid prices (price > 0)
+    query = query.Where(l => l.Price > 0);
+
     // Store filter (optional) — store diya to sirf usi ka
-    if (!string.IsNullOrWhiteSpace(store))
+    bool isSingleStore = !string.IsNullOrWhiteSpace(store);
+    if (isSingleStore)
     {
-        var storeClean = store.Trim().ToLower();
+        var storeClean = store!.Trim().ToLower();
         query = query.Where(l => l.Store.Name.ToLower() == storeClean
                                || l.Store.Slug.ToLower() == storeClean);
     }
 
-    // Category match — check if DB category is one of the normalized synonyms
-    query = query.Where(l => l.Category != null && norms.Contains(l.Category.ToLower()));
+    // Category match — direct equality (same slug from both stores)
+    query = query.Where(l => l.Category != null && l.Category.ToLower() == norm);
 
     var catClean = category.Trim().ToLower();
 
-    // Freshest pehle — pool utha kar memory mein round-robin/rotate
-    var pool = await query
+    // Pool fetch
+    var poolRaw = await query
         .OrderByDescending(l => l.ScrapedAt)
-        .Take(300)
-        .Select(l => new Offer(
-            l.RawTitle, l.Store.Name, l.Price.ToString(), "PKR",
-            l.ProductUrl != null ? l.ProductUrl.Substring(l.ProductUrl.LastIndexOf('/') + 1) : "",
-            l.ProductUrl ?? "", l.ImageUrl))
+        .Take(400)
+        .Select(l => new { l.RawTitle, StoreName = l.Store.Name, l.Price, l.ProductUrl, l.ImageUrl })
         .ToListAsync();
 
-    // Fallback: If DB category matching yields 0 results for a specific subcategory, do title keyword search
-    if (pool.Count == 0 && catClean != "all" && catClean != "electronics")
+    var pool = poolRaw
+        .Select(x => ToOffer(x.RawTitle, x.StoreName, x.Price, x.ProductUrl, x.ImageUrl))
+        .ToList();
+
+    // Fallback: If DB category matching yields 0 results, do title keyword search
+    if (pool.Count == 0 && catClean != "all")
     {
-        var kwQuery = db.StoreListings.AsQueryable();
-        if (!string.IsNullOrWhiteSpace(store))
+        var kwQuery = db.StoreListings.AsQueryable().Where(l => l.Price > 0);
+        if (isSingleStore)
         {
-            var storeClean = store.Trim().ToLower();
+            var storeClean = store!.Trim().ToLower();
             kwQuery = kwQuery.Where(l => l.Store.Name.ToLower() == storeClean
                                       || l.Store.Slug.ToLower() == storeClean);
         }
         var searchKw = catClean.Replace('_', ' ');
-        pool = await kwQuery
+        var kwPoolRaw = await kwQuery
             .Where(l => l.RawTitle.ToLower().Contains(searchKw))
             .OrderByDescending(l => l.ScrapedAt)
-            .Take(150)
-            .Select(l => new Offer(
-                l.RawTitle, l.Store.Name, l.Price.ToString(), "PKR",
-                l.ProductUrl != null ? l.ProductUrl.Substring(l.ProductUrl.LastIndexOf('/') + 1) : "",
-                l.ProductUrl ?? "", l.ImageUrl))
+            .Take(200)
+            .Select(l => new { l.RawTitle, StoreName = l.Store.Name, l.Price, l.ProductUrl, l.ImageUrl })
             .ToListAsync();
+
+        pool = kwPoolRaw
+            .Select(x => ToOffer(x.RawTitle, x.StoreName, x.Price, x.ProductUrl, x.ImageUrl))
+            .ToList();
     }
 
     if (pool.Count == 0)
@@ -115,23 +124,32 @@ app.MapGet("/api/browse", async (string category, string? store, int? seed, AppD
 
     int s = seed ?? 0;
 
-    // Har store ke items alag karo -> seed se rotate (refresh variety) -> round-robin interleave
+    int totalTargetLimit = isSingleStore ? 50 : 100;
+    int perStoreLimit = 50;
+
+    // Separate by store, rotate with seed, take up to 50 items per store
     var groups = pool
         .GroupBy(p => p.Store)
         .Select(g =>
         {
             var arr = g.ToList();
             int off = arr.Count > 0 ? ((s % arr.Count) + arr.Count) % arr.Count : 0;
-            return arr.Skip(off).Concat(arr.Take(off)).ToList();
+            var rotated = arr.Skip(off).Concat(arr.Take(off)).ToList();
+            return rotated.Take(perStoreLimit).ToList();
         })
         .ToList();
 
+    // Equal Round-robin interleave across stores up to totalTargetLimit (100 total, 50 per store)
     var results = new List<Offer>();
-    int max = groups.Count > 0 ? groups.Max(g => g.Count) : 0;
-    for (int i = 0; i < max && results.Count < 80; i++)
+    int maxInGroup = groups.Count > 0 ? groups.Max(g => g.Count) : 0;
+    for (int i = 0; i < maxInGroup && results.Count < totalTargetLimit; i++)
+    {
         foreach (var g in groups)
-            if (i < g.Count && results.Count < 80)
+        {
+            if (i < g.Count && results.Count < totalTargetLimit)
                 results.Add(g[i]);
+        }
+    }
 
     return Results.Ok(new { Source = "database", Results = results });
 });
@@ -151,7 +169,8 @@ app.MapGet("/api/store-categories", async (string store, AppDbContext db) =>
 
     var cats = await db.StoreListings
         .Where(l => (l.Store.Name.ToLower() == storeClean || l.Store.Slug.ToLower() == storeClean)
-                    && l.Category != null)
+                    && l.Category != null
+                    && l.Price > 0)
         .GroupBy(l => l.Category)
         .Select(g => new { category = g.Key, count = g.Count() })
         .OrderByDescending(x => x.count)
@@ -170,9 +189,10 @@ app.MapGet("/api/search", async (string q, string? store, IHttpClientFactory htt
         return Results.BadRequest("q khaali nahi ho sakta");
 
     var queryClean = q.Trim().ToLower();
+    var keywords = queryClean.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-    // Build base query with optional store filter
-    var baseQuery = db.StoreListings.AsQueryable();
+    // Build base query with optional store filter and price > 0 filter
+    var baseQuery = db.StoreListings.AsQueryable().Where(l => l.Price > 0);
     if (!string.IsNullOrWhiteSpace(store))
     {
         var storeClean = store.Trim().ToLower();
@@ -180,17 +200,29 @@ app.MapGet("/api/search", async (string q, string? store, IHttpClientFactory htt
                                        || l.Store.Slug.ToLower() == storeClean);
     }
 
-    // Combined: category match OR title contains — single query, both stores
-    var fromDb = await baseQuery
+    // 1. All keywords match in Title OR exact category match
+    var fromDbRaw = await baseQuery
         .Where(l => l.Category == queryClean
-                 || l.RawTitle.ToLower().Contains(queryClean))
+                 || (keywords.Length > 0 && keywords.All(kw => l.RawTitle.ToLower().Contains(kw))))
         .OrderBy(l => l.Price)
-        .Take(80)
-        .Select(l => new Offer(
-            l.RawTitle, l.Store.Name, l.Price.ToString(), "PKR",
-            l.ProductUrl != null ? l.ProductUrl.Substring(l.ProductUrl.LastIndexOf('/') + 1) : "",
-            l.ProductUrl ?? "", l.ImageUrl))
+        .Take(100)
+        .Select(l => new { l.RawTitle, StoreName = l.Store.Name, l.Price, l.ProductUrl, l.ImageUrl })
         .ToListAsync();
+
+    // 2. Fallback: Any keyword match in Title (if all keywords together returned 0)
+    if (fromDbRaw.Count == 0 && keywords.Length > 1)
+    {
+        fromDbRaw = await baseQuery
+            .Where(l => keywords.Any(kw => l.RawTitle.ToLower().Contains(kw)))
+            .OrderBy(l => l.Price)
+            .Take(100)
+            .Select(l => new { l.RawTitle, StoreName = l.Store.Name, l.Price, l.ProductUrl, l.ImageUrl })
+            .ToListAsync();
+    }
+
+    var fromDb = fromDbRaw
+        .Select(x => ToOffer(x.RawTitle, x.StoreName, x.Price, x.ProductUrl, x.ImageUrl))
+        .ToList();
 
     if (fromDb.Count > 0)
         return Results.Ok(new { Source = "database", Results = fromDb });
@@ -232,46 +264,30 @@ app.MapGet("/api/search", async (string q, string? store, IHttpClientFactory htt
 // ============================================================
 //  MANUAL SYNC TRIGGER — Telemart & Mega.pk sync endpoints
 // ============================================================
-app.MapMethods("/api/sync/telemart", new[] { "GET", "POST" }, (IBackgroundJobClient jobs) =>
+app.MapPost("/api/sync-telemart", (IBackgroundJobClient jobs) =>
 {
     jobs.Enqueue<TelemartSyncService>(s => s.SyncAllProductsAsync());
     return Results.Ok(new { Message = "Telemart sync background task shuru ho gayi hai." });
 });
 
-app.MapMethods("/api/sync-telemart", new[] { "GET", "POST" }, (IBackgroundJobClient jobs) =>
-{
-    jobs.Enqueue<TelemartSyncService>(s => s.SyncAllProductsAsync());
-    return Results.Ok(new { Message = "Telemart sync background task shuru ho gayi hai." });
-});
-
-app.MapMethods("/api/sync-telmart", new[] { "GET", "POST" }, (IBackgroundJobClient jobs) =>
-{
-    jobs.Enqueue<TelemartSyncService>(s => s.SyncAllProductsAsync());
-    return Results.Ok(new { Message = "Telemart sync background task shuru ho gayi hai." });
-});
-
-app.MapMethods("/api/sync/megapk", new[] { "GET", "POST" }, (IBackgroundJobClient jobs) =>
+app.MapPost("/api/sync-megapk", (IBackgroundJobClient jobs) =>
 {
     jobs.Enqueue<MegaPkSyncService>(s => s.SyncAllProductsAsync());
     return Results.Ok(new { Message = "Mega.pk sync background task shuru ho gayi hai." });
 });
 
-app.MapMethods("/api/sync-megapk", new[] { "GET", "POST" }, (IBackgroundJobClient jobs) =>
-{
-    jobs.Enqueue<MegaPkSyncService>(s => s.SyncAllProductsAsync());
-    return Results.Ok(new { Message = "Mega.pk sync background task shuru ho gayi hai." });
-});
-
+// ============================================================
 //  TELEMART PRODUCT DETAIL — live
 // ============================================================
 app.MapGet("/api/product/{handle}", async (string handle, IHttpClientFactory httpFactory) =>
 {
-    var http = httpFactory.CreateClient();
+    var http = httpFactory.CreateClient("ScraperClient");
     http.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0");
 
     try
     {
-        var json = await http.GetStringAsync($"https://www.telemart.pk/products/{handle}.json");
+        var safeHandle = Uri.EscapeDataString(handle);
+        var json = await http.GetStringAsync($"https://www.telemart.pk/products/{safeHandle}.json");
         using var doc = JsonDocument.Parse(json);
         var product = doc.RootElement.GetProperty("product");
 
@@ -299,7 +315,7 @@ app.MapGet("/api/product/{handle}", async (string handle, IHttpClientFactory htt
             Brand       = product.TryGetProperty("vendor", out var v) ? v.GetString() : "",
             Images      = images,
             Variants    = variants,
-            Url         = $"https://www.telemart.pk/products/{handle}"
+            Url         = $"https://www.telemart.pk/products/{safeHandle}"
         });
     }
     catch (Exception ex)
@@ -310,19 +326,47 @@ app.MapGet("/api/product/{handle}", async (string handle, IHttpClientFactory htt
 
 
 // ============================================================
-//  MEGA.PK PRODUCT DETAIL — live (HTML se)
+//  MEGA.PK PRODUCT DETAIL — live (HTML se + DB fallback)
 // ============================================================
-app.MapGet("/api/megapk-product", async (string url, IHttpClientFactory httpFactory) =>
+app.MapGet("/api/megapk-product", async (string url, IHttpClientFactory httpFactory, AppDbContext db) =>
 {
-    if (string.IsNullOrWhiteSpace(url) || !url.Contains("mega.pk"))
+    if (string.IsNullOrWhiteSpace(url))
         return Results.BadRequest("Sahi Mega.pk product URL do (?url=...)");
 
-    var http = httpFactory.CreateClient();
-    http.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0");
+    var cleanUrl = url.Trim();
+    if (!cleanUrl.StartsWith("http://") && !cleanUrl.StartsWith("https://"))
+    {
+        cleanUrl = "https://www.mega.pk/" + cleanUrl.TrimStart('/');
+    }
+
+    if (!Uri.TryCreate(cleanUrl, UriKind.Absolute, out var uri) ||
+        (uri.Host != "mega.pk" && !uri.Host.EndsWith(".mega.pk", StringComparison.OrdinalIgnoreCase)))
+    {
+        return Results.BadRequest("Sirf valid Mega.pk URLs allowed hain.");
+    }
+
+    var http = httpFactory.CreateClient("ScraperClient");
+    http.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
 
     try
     {
-        var html = await http.GetStringAsync(url);
+        var response = await http.GetAsync(cleanUrl);
+        if (!response.IsSuccessStatusCode)
+        {
+            var listing = await db.StoreListings.FirstOrDefaultAsync(l => l.ProductUrl == url || l.ProductUrl == cleanUrl);
+            return Results.Ok(new
+            {
+                Title = listing?.RawTitle ?? "Mega.pk Product",
+                Store = "Mega.pk",
+                Price = (listing?.Price ?? 0).ToString(),
+                Brand = "Mega.pk",
+                Images = new List<string> { listing?.ImageUrl ?? "" },
+                Specs = new List<object>(),
+                Url = cleanUrl
+            });
+        }
+
+        var html = await response.Content.ReadAsStringAsync();
 
         var titleM = Regex.Match(html, @"<h2 class=""product-title""\s*>(.*?)</h2>", RegexOptions.Singleline);
         var title = titleM.Success ? CleanText(titleM.Groups[1].Value) : "";
@@ -365,18 +409,28 @@ app.MapGet("/api/megapk-product", async (string url, IHttpClientFactory httpFact
 
         return Results.Ok(new
         {
-            Title    = title,
-            Store    = "Mega.pk",
-            Price    = price.ToString(),
-            Brand    = brand,
-            Images   = new List<string> { mainImage },
-            Specs    = specs,
-            Url      = url
+            Title = string.IsNullOrWhiteSpace(title) ? "Mega.pk Product" : title,
+            Store = "Mega.pk",
+            Price = price.ToString(),
+            Brand = brand,
+            Images = new List<string> { mainImage },
+            Specs = specs,
+            Url = cleanUrl
         });
     }
-    catch (Exception ex)
+    catch (Exception)
     {
-        return Results.Problem($"Mega.pk detail mein masla: {ex.Message}");
+        var listing = await db.StoreListings.FirstOrDefaultAsync(l => l.ProductUrl == url || l.ProductUrl == cleanUrl);
+        return Results.Ok(new
+        {
+            Title = listing?.RawTitle ?? "Mega.pk Product",
+            Store = "Mega.pk",
+            Price = (listing?.Price ?? 0).ToString(),
+            Brand = "Mega.pk",
+            Images = new List<string> { listing?.ImageUrl ?? "" },
+            Specs = new List<object>(),
+            Url = cleanUrl
+        });
     }
 });
 
@@ -418,96 +472,18 @@ static string CleanText(string raw)
 
 
 // ===== Helper: category naam normalize =====
-// Returns ALL DB category slugs that should match the given query.
-// E.g. "audio" → ["audio","headphones","home_theater"] — catches both Mega + Telemart.
-// Browse endpoint calls this, then WHERE checks if DB category matches ANY slug in the list.
-static string[] NormalizeCategoryList(string c)
+static string NormalizeCategory(string? c) => (c ?? "").Trim().ToLower();
+
+// ===== Helper: DB raw fields se Offer object banata hai (Handle in-memory calculate hota hai) =====
+static Offer ToOffer(string title, string store, decimal price, string? url, string? imageUrl)
 {
-    c = (c ?? "").Trim().ToLower().Replace('-', '_').Replace(' ', '_');
-    return c switch
+    string handle = "";
+    if (!string.IsNullOrEmpty(url))
     {
-        // Mobiles — top category: show all mobiles (iphones + androids + generic mobiles)
-        "mobiles" =>
-            new[] { "mobiles", "iphones", "androids" },
-        "iphone" or "iphones" =>
-            new[] { "iphones" },
-        "android" or "androids" or "mobile" =>
-            new[] { "mobiles", "androids" },
-        "laptop" or "laptops" =>
-            new[] { "laptops" },
-        "tablet" or "tablets" =>
-            new[] { "tablets" },
-        "camera" or "cameras" =>
-            new[] { "cameras", "digital_cameras", "mirrorless_cameras", "camera_lenses" },
-        "monitor" or "monitors" =>
-            new[] { "monitors" },
-        "printer" or "printers" =>
-            new[] { "printers", "inkjet_printers", "multifunction_printers" },
-        "tv" or "tvs" or "television" or "televisions" or "led_tv" =>
-            new[] { "televisions" },
-        "audio" or "headphone" or "headphones" or "home_theater" =>
-            new[] { "audio", "headphones", "home_theater" },
-        "smartwatch" or "smart" or "analog" or "watch" or "watches" =>
-            new[] { "watches" },
-        "gaming" or "videogames" or "console" or "gaming_consoles" =>
-            new[] { "gaming", "gaming_consoles" },
-        "power_banks" or "powerbank" or "powerbanks" or "power_bank" =>
-            new[] { "power banks", "power_banks" },
-        "desktop" or "desktops" or "desktop_computers" or "server" or "servers" =>
-            new[] { "desktop_computers", "servers" },
-        "projector" or "projectors" =>
-            new[] { "projectors" },
-        "accessories" or "accessory" =>
-            new[] { "accessories" },
-
-        // --- APPLIANCES ---
-        "appliances" =>
-            new[] { "appliances", "air_conditioners", "fridge", "washing_machine", "microwave", "freezer", "fans", "kitchen_appliances", "irons", "heaters", "geyser" },
-        "air_conditioners" or "acs" or "airconditioner" =>
-            new[] { "air_conditioners", "appliances" },
-        "fridge" or "refrigerator" or "freezer" =>
-            new[] { "fridge", "freezer", "appliances" },
-        "washing_machine" or "washing" or "washingmachine" =>
-            new[] { "washing_machine", "appliances" },
-        "microwave" or "microwaveovens" =>
-            new[] { "microwave", "appliances" },
-        "fans" or "fan" =>
-            new[] { "fans", "appliances" },
-
-        // --- BEAUTY ---
-        "beauty" =>
-            new[] { "beauty", "skincare", "makeup", "fragrances" },
-        "skincare" =>
-            new[] { "skincare", "beauty" },
-        "makeup" =>
-            new[] { "makeup", "beauty" },
-        "fragrances" or "perfume" or "perfumes" =>
-            new[] { "fragrances", "beauty" },
-
-        // --- FASHION ---
-        "fashion" =>
-            new[] { "fashion", "menswear", "womenswear", "footwear" },
-        "menswear" =>
-            new[] { "menswear", "fashion" },
-        "womenswear" =>
-            new[] { "womenswear", "fashion" },
-        "footwear" =>
-            new[] { "footwear", "fashion" },
-
-        // --- HOME & LIVING ---
-        "home" =>
-            new[] { "home", "furniture", "kitchenware", "bedding", "lighting" },
-        "furniture" =>
-            new[] { "furniture", "home" },
-        "kitchenware" =>
-            new[] { "kitchenware", "home" },
-        "bedding" =>
-            new[] { "bedding", "home" },
-        "lighting" =>
-            new[] { "lighting", "home" },
-
-        _ => new[] { c }
-    };
+        int idx = url.LastIndexOf('/');
+        handle = idx >= 0 ? url[(idx + 1)..] : url;
+    }
+    return new Offer(title, store, price.ToString(), "PKR", handle, url ?? "", imageUrl);
 }
 
 

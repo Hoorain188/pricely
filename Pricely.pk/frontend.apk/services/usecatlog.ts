@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
-import { getCategories, getTrendingSearches, getBestDrops, getSubcategories, Category, Deal, Subcategory } from '../services/catalogService';
+import { fetchProductDetail, ProductDetail } from '../services/api';
+import { Category, Deal, getBestDrops, getCategories, getSubcategories, getTrendingSearches, Subcategory } from '../services/catalogService';
 
-// Thin data hooks — HomeScreen calls these instead of importing static
-// arrays, so switching catalogService's internals to real network calls
-// later requires zero changes here or in the screen.
+// Thin data hooks — screens call these instead of importing static arrays.
+// useCategories/useSubcategories ab optional `store` lete hain: store diya to
+// sirf us store ki asal categories/subs (DB se) aati hain.
 
-export function useCategories() {
+export function useCategories(store?: string) {
     const [categories, setCategories] = useState<Category[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         let alive = true;
-        getCategories().then((data) => {
+        setLoading(true);
+        getCategories(store).then((data) => {
             if (alive) {
                 setCategories(data);
                 setLoading(false);
@@ -20,7 +22,7 @@ export function useCategories() {
         return () => {
             alive = false;
         };
-    }, []);
+    }, [store]);
 
     return { categories, loading };
 }
@@ -65,14 +67,14 @@ export function useBestDrops() {
     return { deals, loading };
 }
 
-export function useSubcategories(categoryKey: string) {
+export function useSubcategories(categoryKey: string, store?: string) {
     const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         let alive = true;
         setLoading(true);
-        getSubcategories(categoryKey).then((data) => {
+        getSubcategories(categoryKey, store).then((data) => {
             if (alive) {
                 setSubcategories(data);
                 setLoading(false);
@@ -81,7 +83,41 @@ export function useSubcategories(categoryKey: string) {
         return () => {
             alive = false;
         };
-    }, [categoryKey]);
+    }, [categoryKey, store]);
 
     return { subcategories, loading };
+}
+
+export function useProductDetail(handle: string) {
+    const [detail, setDetail] = useState<ProductDetail | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let alive = true;
+        if (!handle) {
+            setLoading(false);
+            return;
+        }
+        setLoading(true);
+        setError(null);
+        fetchProductDetail(handle)
+            .then((data) => {
+                if (alive) {
+                    setDetail(data);
+                    setLoading(false);
+                }
+            })
+            .catch((err: any) => {
+                if (alive) {
+                    setError(err?.message || 'Failed to load product detail');
+                    setLoading(false);
+                }
+            });
+        return () => {
+            alive = false;
+        };
+    }, [handle]);
+
+    return { detail, loading, error };
 }

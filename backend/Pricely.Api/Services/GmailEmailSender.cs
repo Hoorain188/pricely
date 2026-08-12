@@ -76,6 +76,17 @@ public class GmailEmailSender : IEmailSender
         using var client = new SmtpClient();
         try
         {
+            // Skips only the "has this certificate been revoked?" lookup, which
+            // cannot complete on some machines (notably macOS) and fails the
+            // whole handshake with "An incomplete certificate revocation check
+            // occurred" even though the chain is valid.
+            //
+            // The certificate is still fully validated — issuer, trust root,
+            // hostname and expiry. This is deliberately NOT a callback that
+            // accepts any certificate: that would disable those checks too and
+            // leave the SMTP session open to interception.
+            client.CheckCertificateRevocation = false;
+
             // Gmail on 587 uses STARTTLS (upgrade a plain connection to TLS),
             // not implicit SSL — SslOnConnect here would hang.
             await client.ConnectAsync(_options.SmtpHost, _options.SmtpPort, SecureSocketOptions.StartTls, ct);

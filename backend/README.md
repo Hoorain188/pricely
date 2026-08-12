@@ -31,7 +31,11 @@ dotnet user-secrets set "Email:SmtpPassword" "<16-char app password>"
 
 That password is a **Gmail App Password**, not your normal one: turn on 2-Step Verification at [myaccount.google.com](https://myaccount.google.com/security) → **Security** → **App passwords** → create one.
 
+Enter the app password **without spaces** — Google displays it as `abcd efgh ijkl mnop`, but it must be set as `abcdefghijklmnop`.
+
 Skip this and the API still runs: in Development it falls back to printing codes to the console and logs a warning saying so. Outside Development it refuses to start without email configured, so a deployment can't silently stop sending mail.
+
+**If sending fails with "An incomplete certificate revocation check occurred"** — that's a known macOS/.NET issue where the CA revocation lookup can't complete. It's already handled in `GmailEmailSender` by disabling only the revocation check; the certificate chain, hostname and expiry are still validated.
 
 ### 3. Run
 

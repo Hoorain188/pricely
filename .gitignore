@@ -30,8 +30,17 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# local env & secret files
+.env
+.env.*
+!.env.example
+*.env
+
+# dotnet config with secrets
+appsettings.json
+appsettings.Development.json
+bin/
+obj/
 
 # typescript
 *.tsbuildinfo

@@ -1,12 +1,12 @@
 # Pricely API
 
-ASP.NET Core 8 Web API backing the Pricely app: authentication (signup, email verification, login, password reset, sessions) and back-office team management (approvals, invites, roles).
+ASP.NET Core 10 Web API backing the Pricely app: authentication (signup, email verification, login, password reset, sessions) and back-office team management (approvals, invites, roles).
 
 The Expo app calls this directly — see `Pricely.pk/frontend.apk/config/api.ts`, which finds the API automatically in development by reusing the address Expo serves from, so there's no IP to keep updating.
 
 ## Getting it running
 
-You need the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). (The admin backend on `main` targets net10.0 too — matching it removes a merge conflict.)
 
 ### 1. Secrets
 
@@ -42,6 +42,8 @@ Skip this and the API still runs: in Development it falls back to printing codes
 ```bash
 dotnet run
 ```
+
+The default profile binds **`http://0.0.0.0:5099`**, not `localhost`. That matters: on a phone "localhost" means the phone itself, so a localhost binding is unreachable from any other device and the app can only report that it can't reach the server. Port 5099 is what `Pricely.pk/frontend.apk/config/api.ts` expects.
 
 Swagger UI is at the printed URL (e.g. `http://localhost:5099/swagger`). Health check at `/health`.
 

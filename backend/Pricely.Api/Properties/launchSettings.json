@@ -6,13 +6,6 @@
       "dotnetRunMessages": true,
       "launchBrowser": true,
       "launchUrl": "swagger",
-
-      // 0.0.0.0, not localhost: a phone running the app is a different device,
-      // and "localhost" on the phone means the phone itself. Bound to
-      // localhost the API is unreachable from anything but this machine, and
-      // the app just reports that it can't reach the server.
-      //
-      // Port 5099 is what Pricely.pk/frontend.apk/config/api.ts expects.
       "applicationUrl": "http://0.0.0.0:5099",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"

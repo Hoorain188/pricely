@@ -1,9 +1,10 @@
 using System.ComponentModel.DataAnnotations;
 using Pricely.Api.Models;
+using Pricely.Core.Entities;
 
 namespace Pricely.Api.Dtos;
 
-public record TeamMemberDto(
+public record TeamMemberView(
     long Id,
     string Name,
     string Email,
@@ -11,7 +12,7 @@ public record TeamMemberDto(
     bool IsActive,
     DateTimeOffset CreatedAt);
 
-public record TeamRequestDto(
+public record TeamRequestView(
     long Id,
     string Email,
     string? Name,
@@ -33,11 +34,11 @@ public enum AssignableRole
     ReadOnly
 }
 
-public record InviteMemberRequest(
+public record InviteMemberInput(
     [Required, EmailAddress, StringLength(255)] string Email,
     [Required] AssignableRole Role);
 
-public record ChangeRoleRequest(
+public record RoleChangeInput(
     [Required] AssignableRole Role);
 
 public record AcceptInviteRequest(

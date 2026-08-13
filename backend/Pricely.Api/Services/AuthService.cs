@@ -2,7 +2,8 @@ using System.Security.Cryptography;
 using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using Pricely.Api.Data;
+using Pricely.Infrastructure;
+using Pricely.Core.Entities;
 using Pricely.Api.Dtos;
 using Pricely.Api.Models;
 
@@ -12,7 +13,7 @@ public class AuthService
 {
     private static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(15);
 
-    private readonly PricelyDbContext _db;
+    private readonly AppDbContext _db;
     private readonly ITokenService _tokens;
     private readonly IEmailSender _email;
     private readonly IActivityLogger _activity;
@@ -20,7 +21,7 @@ public class AuthService
     private readonly ILogger<AuthService> _logger;
 
     public AuthService(
-        PricelyDbContext db,
+        AppDbContext db,
         ITokenService tokens,
         IEmailSender email,
         IActivityLogger activity,
@@ -466,7 +467,7 @@ public class AuthService
         invite.ReviewedAt = DateTimeOffset.UtcNow;
         invite.InviteToken = null;   // single use
 
-        _activity.Record(user.Id, ActivityActions.AcceptInvite, "team_request", invite.Id,
+        _activity.Record(ActivityActions.AcceptInvite, "team_request", invite.Id,
             new { invite.Email, role = user.Role.ToWire() });
 
         await _db.SaveChangesAsync(ct);

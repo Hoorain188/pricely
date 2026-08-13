@@ -2,7 +2,8 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
-using Pricely.Api.Data;
+using Pricely.Infrastructure;
+using Pricely.Core.Entities;
 using Pricely.Api.Models;
 
 namespace Pricely.Api.Authorization;
@@ -29,10 +30,10 @@ public class ActiveBackOfficeRequirement : IAuthorizationRequirement
 /// </summary>
 public class ActiveBackOfficeHandler : AuthorizationHandler<ActiveBackOfficeRequirement>
 {
-    private readonly PricelyDbContext _db;
+    private readonly AppDbContext _db;
     private readonly ILogger<ActiveBackOfficeHandler> _logger;
 
-    public ActiveBackOfficeHandler(PricelyDbContext db, ILogger<ActiveBackOfficeHandler> logger)
+    public ActiveBackOfficeHandler(AppDbContext db, ILogger<ActiveBackOfficeHandler> logger)
     {
         _db = db;
         _logger = logger;

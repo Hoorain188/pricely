@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, TextInput, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, TextInput, Image, BackHandler } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,6 +28,31 @@ export default function AlertsScreen() {
   const { alerts, toggleAlertActive, addAlert } = useUserStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+
+  const handleBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Home');
+    }
+  };
+
+  React.useEffect(() => {
+    const onBackPress = () => {
+      if (menuOpen) {
+        setMenuOpen(false);
+        return true;
+      }
+      if (modalVisible) {
+        setModalVisible(false);
+        return true;
+      }
+      handleBack();
+      return true;
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [navigation, menuOpen, modalVisible]);
 
   // Custom alert dialog states
   const [saveSuccessVisible, setSaveSuccessVisible] = useState(false);
@@ -82,7 +107,7 @@ export default function AlertsScreen() {
           end={{ x: 1, y: 0 }}
           style={styles.header}
         >
-          <LottieBackButton onPress={() => navigation.navigate('Home')} size={30} />
+          <LottieBackButton onPress={handleBack} size={30} />
           <Text style={styles.headerTitle}>Price alerts</Text>
           <TouchableOpacity
             style={styles.menuButton}
@@ -246,8 +271,7 @@ export default function AlertsScreen() {
           else if (dest === 'Settings') navigation.navigate('Settings');
           else if (dest === 'Help & Support' || dest === 'HelpSupport' || dest === 'Help') navigation.navigate('HelpSupport');
           else if (['Electronics', 'Fashion', 'Home & Living', 'Beauty', 'Appliances', 'Mobiles', 'Categories'].includes(dest)) {
-            const key = dest === 'Mobiles' ? 'electronics' : dest === 'Home & Living' ? 'home' : dest.toLowerCase();
-            navigation.navigate('Category', { categoryKey: key });
+            navigation.navigate('Category', { categoryKey: 'mobiles_tablets' });
           }
         }}
       />

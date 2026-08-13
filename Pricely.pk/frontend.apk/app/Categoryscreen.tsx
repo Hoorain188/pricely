@@ -1,67 +1,68 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  Image,
-  Animated,
-  StyleSheet,
-  Dimensions,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
-  SlidersHorizontal,
-  Smartphone,
-  Tablet,
-  Watch,
-  BatteryCharging,
-  Cable,
-  Monitor,
-  Camera,
-  Tv,
-  Gamepad2,
-  Headphones,
-  Shirt,
-  ShoppingBag,
-  Footprints,
-  Briefcase,
-  Gem,
-  Baby,
-  Droplet,
-  Palette,
-  Scissors,
-  SprayCan,
-  Sparkles,
-  Sofa,
-  UtensilsCrossed,
-  BedDouble,
-  Lamp,
   Archive,
-  Refrigerator,
-  Wind,
+  Baby,
+  BatteryCharging,
+  BedDouble,
+  Briefcase,
+  Cable,
+  Camera,
+  Droplet,
   Fan,
   Flame,
-  Plug,
+  Footprints,
+  Gamepad2,
+  Gem,
   Glasses,
-  Wallet,
-  Package,
+  Headphones,
+  Lamp,
   LucideIcon,
+  Monitor,
+  Package,
+  Palette,
+  Plug,
+  Refrigerator,
+  Scissors,
+  Shirt,
+  ShoppingBag,
+  SlidersHorizontal,
+  Smartphone,
+  Sofa,
+  Sparkles,
+  SprayCan,
+  Tablet,
+  Tv,
+  UtensilsCrossed,
+  Wallet,
+  Watch,
+  Wind,
 } from 'lucide-react-native';
-import { colors, gradients, radii, fonts, shadows } from '../theme/colors';
-import { useCategories, useSubcategories } from '../hooks/useCatalog';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Animated,
+  BackHandler,
+  Dimensions,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { Image } from 'expo-image';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { loremflickrUri } from '../components/CategoryCarousel';
-import { Subcategory, SubcategoryProduct } from '../services/catalogService';
-import LottieBackButton from '../components/Lottiebackbutton';
-import LottieToggleIcon from '../components/LottieToggleIcon';
-import LottieSearchIcon from '../components/Lottiesearchicon';
-import LottieLoader from '../components/Lottieloader';
 import FilterSheet, { FilterState, sortProducts } from '../components/Filtersheet';
-import heartJson from '../../assets/Lottie/Heart.json';
+import LottieBackButton from '../components/Lottiebackbutton';
+import LottieLoader from '../components/Lottieloader';
+import LottieSearchIcon from '../components/Lottiesearchicon';
+import { useCategories, useSubcategories } from '../hooks/useCatalog';
+import { fetchBrowseProducts, formatPrice } from '../services/api';
+import { SubcategoryProduct, searchProducts } from '../services/catalogService';
+import { colors, fonts, gradients, radii, shadows } from '../theme/colors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CONTENT_PADDING = 16;
@@ -193,28 +194,39 @@ const getIconForTag = (tag: string): LucideIcon => {
 const FLASH_DISCOUNTS = [20, 30, 15];
 
 const CATEGORY_SALE_TAGS: Record<string, string> = {
-  electronics: 'tech,gadgets',
-  fashion: 'clothes,fashion',
-  beauty: 'cosmetics,beauty',
-  home: 'interior,decor',
-  appliances: 'kitchenware,appliances',
-  watches: 'wristwatch,luxury',
+  mobiles_tablets: 'smartphone,phone',
+  laptops_computers: 'laptop,computer',
+  tv_entertainment: 'television,tv',
+  home_appliances: 'appliances,fridge',
+  kitchen_appliances: 'kitchen,blender',
+  cameras: 'camera,dslr',
+  audio: 'headphones,speaker',
+  wearables: 'smartwatch,watch',
+  gaming: 'gaming,playstation',
+  accessories: 'charger,cable',
 };
 
 export default function CategoryScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const initialCategory: string = route.params?.categoryKey || 'electronics';
+  const initialCategory: string = route.params?.categoryKey || 'mobiles_tablets';
+  const storeFilter: string | undefined = route.params?.storeFilter;
 
-  const { categories } = useCategories();
+  const { categories } = useCategories(storeFilter);
   const [activeCategory, setActiveCategory] = useState(initialCategory);
-  const { subcategories, loading } = useSubcategories(activeCategory);
-  
+  const { loading } = useSubcategories(activeCategory, storeFilter);
+
+  // Refresh: seed badalne par browse naya (rotated) data deta hai
+  const [seed, setSeed] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
   // Transition loading logic to eliminate flash of empty grids
   const [localLoading, setLocalLoading] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalLoading(true);
+    setApiError(null);
   }, [activeCategory]);
 
   useEffect(() => {
@@ -225,36 +237,172 @@ export default function CategoryScreen() {
 
   const isPageLoading = loading || localLoading;
 
-  const [activeSubcategory, setActiveSubcategory] = useState('');
   const [searchValue, setSearchValue] = useState('');
   const [filterVisible, setFilterVisible] = useState(false);
   const [filter, setFilter] = useState<FilterState>({ sort: 'relevance', stores: [] });
   const flashScrollX = useRef(new Animated.Value(0)).current;
 
+  // Auto-scroll peek animation for category tabs bar (runs on mount + repeats every 10s)
+  const tabScrollRef = useRef<ScrollView>(null);
+  const tabUserInteractedRef = useRef(false);
+  const tabTouchPauseTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleTabTouch = () => {
+    tabUserInteractedRef.current = true;
+    if (tabTouchPauseTimerRef.current) {
+      clearTimeout(tabTouchPauseTimerRef.current);
+    }
+    // Pause for 10 seconds on user touch, then auto-resume
+    tabTouchPauseTimerRef.current = setTimeout(() => {
+      tabUserInteractedRef.current = false;
+    }, 10000);
+  };
+
+  useEffect(() => {
+    if (!categories || categories.length === 0) return;
+
+    let animationFrameId: number;
+
+    const runPeekAnimation = () => {
+      if (tabUserInteractedRef.current) return;
+
+      let scrollPos = 0;
+      const maxScroll = 280;
+      let forward = true;
+
+      const animateScroll = () => {
+        if (tabUserInteractedRef.current) return;
+
+        if (forward) {
+          scrollPos += 0.7;
+          if (scrollPos >= maxScroll) {
+            forward = false;
+          }
+        } else {
+          scrollPos -= 0.7;
+          if (scrollPos <= 0) {
+            scrollPos = 0;
+            tabScrollRef.current?.scrollTo({ x: 0, animated: true });
+            return;
+          }
+        }
+
+        tabScrollRef.current?.scrollTo({ x: scrollPos, animated: false });
+        animationFrameId = requestAnimationFrame(animateScroll);
+      };
+
+      animationFrameId = requestAnimationFrame(animateScroll);
+    };
+
+    const initialTimer = setTimeout(runPeekAnimation, 1000);
+    const intervalId = setInterval(runPeekAnimation, 10000);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(intervalId);
+      if (tabTouchPauseTimerRef.current) clearTimeout(tabTouchPauseTimerRef.current);
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    };
+  }, [categories]);
+
   useEffect(() => {
     if (route.params?.categoryKey) setActiveCategory(route.params.categoryKey);
   }, [route.params?.categoryKey]);
 
-  useEffect(() => {
-    if (subcategories.length > 0) {
-      if (!activeSubcategory || !subcategories.some((s) => s.key === activeSubcategory)) {
-        setActiveSubcategory(subcategories[0].key);
-      }
-    }
-  }, [subcategories, activeSubcategory]);
+  const categoryLabel = storeFilter
+    ? `${storeFilter} — ${categories.find((c) => c.key === activeCategory)?.label ?? activeCategory}`
+    : (categories.find((c) => c.key === activeCategory)?.label ?? activeCategory);
 
-  const activeSub = subcategories.find((s) => s.key === activeSubcategory) ?? subcategories[0];
-  const categoryLabel = categories.find((c) => c.key === activeCategory)?.label ?? activeCategory;
+  const [apiProducts, setApiProducts] = useState<SubcategoryProduct[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    // Seedha category key hi DB query hai (dono stores same slug)
+    const queryTerm = activeCategory;
+
+    setApiError(null);
+    fetchBrowseProducts(queryTerm, storeFilter, seed)
+      .then((apiResults) => {
+        if (alive && apiResults && apiResults.length > 0) {
+          setApiProducts(apiResults.map((item) => ({
+            name: item.title,
+            price: formatPrice(item.price),
+            pictureTag: item.title,
+            handle: item.handle,
+            imageUrl: item.imageUrl || undefined,
+            url: item.url,
+            store: item.store,
+            currency: item.currency,
+          })));
+        } else if (alive) {
+          searchProducts(queryTerm, storeFilter)
+            .then((res: SubcategoryProduct[]) => {
+              if (alive) setApiProducts(res && res.length > 0 ? res : []);
+            })
+            .catch(() => { if (alive) setApiProducts([]); });
+        }
+      })
+      .catch((err: any) => {
+        if (alive) {
+          setApiError(err?.message || "Can't reach server — check connection");
+          searchProducts(queryTerm, storeFilter)
+            .then((res: SubcategoryProduct[]) => {
+              if (alive && res && res.length > 0) {
+                setApiProducts(res);
+                setApiError(null);
+              }
+            })
+            .catch(() => { });
+        }
+      })
+      .finally(() => { if (alive) setRefreshing(false); });
+    return () => {
+      alive = false;
+    };
+  }, [activeCategory, storeFilter, seed]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    setSeed((s) => s + 1); // seed badla -> browse rotated/naya data dega
+  };
 
   const filteredProducts = useMemo(() => {
-    if (!activeSub) return [];
-    let list = activeSub.products;
-    if (filter.stores.length > 0) {
-      const demoStores = ['Daraz', 'Telemart', 'Mega.pk', 'Amazon'];
-      list = list.filter((_, i) => filter.stores.includes(demoStores[i % demoStores.length]));
+    let list: SubcategoryProduct[] = apiProducts;
+    // storeFilter is already applied at API level, no need to filter again
+    if (!storeFilter && filter.stores.length > 0) {
+      list = list.filter((item: SubcategoryProduct) => {
+        const itemStore = item.store || '';
+        return filter.stores.some(s => s.toLowerCase() === itemStore.toLowerCase());
+      });
+    }
+
+    if (filter.sort === 'relevance') {
+      // Sort combined products by price ascending (putting 0 or invalid prices at the end)
+      const parsePrice = (p: string) => {
+        const num = Number(p.replace(/[^0-9.]/g, '')) || 0;
+        return num === 0 ? 99999999 : num;
+      };
+      return [...list].sort((a, b) => parsePrice(a.price) - parsePrice(b.price));
     }
     return sortProducts(list, filter.sort);
-  }, [activeSub, filter]);
+  }, [apiProducts, filter, storeFilter]);
+
+  const handleBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Home');
+    }
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [navigation]);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -266,7 +414,7 @@ export default function CategoryScreen() {
         end={{ x: 1, y: 0 }}
         style={styles.header}
       >
-        <LottieBackButton onPress={() => navigation.goBack()} size={30} />
+        <LottieBackButton onPress={handleBack} size={30} />
         <Text style={styles.headerTitle}>{categoryLabel}</Text>
         <TouchableOpacity style={styles.favButton} activeOpacity={0.8} onPress={() => navigation.navigate('Favorites')}>
           <Ionicons name="heart" size={22} color={colors.onDarkPrimary} />
@@ -298,10 +446,13 @@ export default function CategoryScreen() {
 
       {/* Top-level category tabs */}
       <ScrollView
+        ref={tabScrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.tabScroll}
         contentContainerStyle={styles.tabScrollContent}
+        onScrollBeginDrag={handleTabTouch}
+        onTouchStart={handleTabTouch}
       >
         {categories
           .filter((c) => c.key !== 'all')
@@ -320,35 +471,15 @@ export default function CategoryScreen() {
           })}
       </ScrollView>
 
-      {/* Subcategories */}
-      {!isPageLoading && subcategories.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.subScroll}
-          contentContainerStyle={styles.subScrollContent}
-        >
-          {subcategories.map((sub: Subcategory, index: number) => {
-            const active = sub.key === activeSubcategory;
-            const badgeColor = colors.categoryPalette[index % colors.categoryPalette.length];
-            const SubIcon = getIconForTag(sub.imageTag);
-            return (
-              <TouchableOpacity
-                key={sub.key}
-                style={styles.subItem}
-                activeOpacity={0.8}
-                onPress={() => setActiveSubcategory(sub.key)}
-              >
-                <View style={[styles.subIcon, { backgroundColor: badgeColor }, active && styles.subIconActive]}>
-                  <SubIcon size={18} color={colors.onDarkPrimary} strokeWidth={2} />
-                </View>
-                <Text style={[styles.subLabel, active && styles.subLabelActive]} numberOfLines={1}>
-                  {sub.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+      {/* Subcategories removed — har category seedhi final hai */}
+
+      {/* Network error banner */}
+      {apiError && (
+        <View style={{ backgroundColor: '#FADBD8', paddingVertical: 8, paddingHorizontal: 16, alignItems: 'center' }}>
+          <Text style={{ fontSize: 12, fontFamily: fonts.button, color: '#C0392B' }}>
+            ⚠️ {apiError}
+          </Text>
+        </View>
       )}
 
       {/* Content */}
@@ -357,7 +488,19 @@ export default function CategoryScreen() {
           <LottieLoader size={44} />
         </View>
       ) : (
-        <ScrollView style={styles.content} contentContainerStyle={styles.contentInner} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentInner}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.accentSolid}
+              colors={[colors.accentSolid]}
+            />
+          }
+        >
           <Animated.FlatList
             data={FLASH_DISCOUNTS}
             horizontal
@@ -377,12 +520,18 @@ export default function CategoryScreen() {
 
               return (
                 <Animated.View style={[styles.flashSale, { width: FLASH_WIDTH, transform: [{ scale }], opacity }]}>
-                  <Image source={{ uri: loremflickrUri(saleTag, imageLock) }} style={styles.flashImage} resizeMode="cover" />
+                  <Image
+                    source={{ uri: loremflickrUri(saleTag, imageLock) }}
+                    style={styles.flashImage}
+                    contentFit="cover"
+                    transition={200}
+                    cachePolicy="memory-disk"
+                  />
                   <LinearGradient colors={['transparent', colors.navy]} locations={[0.3, 1]} style={StyleSheet.absoluteFillObject} />
                   <View style={styles.flashTextWrap}>
                     <Text style={styles.flashSaleEyebrow}>FLASH SALE</Text>
                     <Text style={styles.flashSaleHeadline}>
-                      Up to {discount}% off {activeSub?.label} today
+                      Up to {discount}% off {categoryLabel} today
                     </Text>
                   </View>
                 </Animated.View>
@@ -391,7 +540,7 @@ export default function CategoryScreen() {
           />
 
           <View style={styles.popularHeaderRow}>
-            <Text style={styles.popularHeading}>Popular in {activeSub?.label}</Text>
+            <Text style={styles.popularHeading}>Popular in {categoryLabel}</Text>
             {(filter.sort !== 'relevance' || filter.stores.length > 0) && (
               <TouchableOpacity onPress={() => setFilter({ sort: 'relevance', stores: [] })}>
                 <Text style={styles.clearFilter}>Clear filter</Text>
@@ -402,20 +551,35 @@ export default function CategoryScreen() {
           <View style={styles.productGrid}>
             {filteredProducts.map((product: SubcategoryProduct, i: number) => (
               <TouchableOpacity
-                key={product.name}
+                key={`${product.handle || product.name}-${i}`}
                 style={styles.productCard}
                 activeOpacity={0.85}
-                onPress={() => navigation.navigate('ProductDetail', { productName: product.name, currentPrice: product.price })}
+                onPress={() =>
+                  navigation.navigate('ProductDetail', {
+                    handle: product.handle,
+                    url: product.url,
+                    productName: product.name,
+                    currentPrice: product.price,
+                    imageUrl: product.imageUrl,
+                  })
+                }
               >
                 <View style={styles.productImageWrap}>
                   <Image
-                    source={{ uri: loremflickrUri(product.pictureTag || activeSub?.imageTag || 'product', i + 1) }}
+                    source={{ uri: product.imageUrl || loremflickrUri(product.pictureTag || 'product', i + 1) }}
                     style={styles.productImage}
-                    resizeMode="cover"
+                    contentFit="contain"
+                    transition={200}
+                    cachePolicy="memory-disk"
                   />
                 </View>
-                <Text style={styles.productName} numberOfLines={1}>{product.name}</Text>
+                <Text style={styles.productName} numberOfLines={2}>{product.name}</Text>
                 <Text style={styles.productPrice}>{product.price}</Text>
+                {product.store ? (
+                  <View style={styles.storeBadge}>
+                    <Text style={styles.storeBadgeText}>{product.store}</Text>
+                  </View>
+                ) : null}
               </TouchableOpacity>
             ))}
             {filteredProducts.length === 0 && (
@@ -551,5 +715,14 @@ const styles = StyleSheet.create({
   productImage: { width: '100%', height: '100%' },
   productName: { fontSize: 13, fontFamily: fonts.body, color: colors.textSecondary, marginBottom: 3 },
   productPrice: { fontSize: 15, fontFamily: fonts.monoEmphasis, color: colors.textPrimary },
+  storeBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.accentTint,
+    borderRadius: radii.small,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginTop: 4,
+  },
+  storeBadgeText: { fontSize: 10, fontFamily: fonts.label, color: colors.accentSolid },
   emptyText: { fontSize: 13, fontFamily: fonts.body, color: colors.textTertiary, paddingVertical: 24, textAlign: 'center', width: '100%' },
 });

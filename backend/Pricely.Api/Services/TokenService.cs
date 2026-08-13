@@ -5,6 +5,7 @@ using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Pricely.Api.Models;
+using Pricely.Core.Entities;
 
 namespace Pricely.Api.Services;
 

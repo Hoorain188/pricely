@@ -1,13 +1,18 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  View, Text, TouchableOpacity, ScrollView, StyleSheet,
+  ActivityIndicator, RefreshControl,
+} from 'react-native';
 import { ArrowLeft, Download } from 'lucide-react-native';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import StatTile from '../components/StatTile';
 import BarRow from '../components/BarRow';
 import { colors, fonts, radii } from '../theme/colors';
-
-type Period = 'weekly' | 'monthly' | 'yearly';
+import {
+  api, formatPrice, toBarRows, toMoneyBarRows, toShareBarRows, ApiError,
+  type Period, type ReportsResponse,
+} from './api/client';
 
 const PERIOD_LABELS: { key: Period; label: string }[] = [
   { key: 'weekly', label: 'Weekly' },
@@ -15,130 +20,32 @@ const PERIOD_LABELS: { key: Period; label: string }[] = [
   { key: 'yearly', label: 'Yearly' },
 ];
 
-interface PriceChange {
-  product: string;
-  from: string;
-  to: string;
-  changePercent: number; // negative = price dropped
-}
-
-interface ReportData {
-  usersLabel: string;
-  savedLabel: string;
-  trending: { label: string; value: string; percent: number }[];
-  priceChanges: PriceChange[];
-  storeAverages: { label: string; value: string; percent: number }[];
-  categories: { label: string; value: string; percent: number }[];
-}
-
-const REPORT_DATA: Record<Period, ReportData> = {
-  weekly: {
-    usersLabel: '1,240 (↑ 8%)',
-    savedLabel: 'Rs 2.1M',
-    trending: [
-      { label: 'iPhone 15', value: '2,340', percent: 100 },
-      { label: 'Air fryer', value: '1,510', percent: 64 },
-      { label: 'Samsung A54', value: '1,120', percent: 48 },
-      { label: 'Sneakers', value: '740', percent: 32 },
-    ],
-    priceChanges: [
-      { product: 'Anker 20000mAh PB', from: 'Rs 9,900', to: 'Rs 8,450', changePercent: -14.6 },
-      { product: 'Redmi Note 13 8/256', from: 'Rs 58,999', to: 'Rs 54,999', changePercent: -6.8 },
-      { product: 'PS5 Slim', from: 'Rs 142,900', to: 'Rs 149,900', changePercent: 4.9 },
-    ],
-    storeAverages: [
-      { label: 'Telemart', value: 'Rs 41,200', percent: 88 },
-      { label: 'Daraz', value: 'Rs 43,900', percent: 94 },
-      { label: 'Mega.pk', value: 'Rs 46,700', percent: 100 },
-      { label: 'Amazon', value: 'Rs 51,300', percent: 100 },
-    ],
-    categories: [
-      { label: 'Mobiles', value: '42%', percent: 100 },
-      { label: 'Electronics', value: '27%', percent: 64 },
-      { label: 'Appliances', value: '18%', percent: 43 },
-      { label: 'Fashion', value: '13%', percent: 31 },
-    ],
-  },
-  monthly: {
-    usersLabel: '4,920 (↑ 14%)',
-    savedLabel: 'Rs 8.7M',
-    trending: [
-      { label: 'iPhone 15', value: '9,110', percent: 100 },
-      { label: 'Samsung A54', value: '6,430', percent: 71 },
-      { label: 'Air fryer', value: '5,280', percent: 58 },
-      { label: 'PS5 slim', value: '3,960', percent: 43 },
-    ],
-    priceChanges: [
-      { product: 'Samsung Galaxy A54 8/128', from: 'Rs 69,900', to: 'Rs 64,999', changePercent: -7.0 },
-      { product: 'Philips Air Fryer HD9200', from: 'Rs 17,900', to: 'Rs 16,250', changePercent: -9.2 },
-      { product: 'iPhone 15 Pro 256GB', from: 'Rs 372,000', to: 'Rs 379,500', changePercent: 2.0 },
-    ],
-    storeAverages: [
-      { label: 'Telemart', value: 'Rs 39,800', percent: 85 },
-      { label: 'Daraz', value: 'Rs 42,100', percent: 90 },
-      { label: 'Mega.pk', value: 'Rs 44,900', percent: 96 },
-      { label: 'Amazon', value: 'Rs 46,700', percent: 100 },
-    ],
-    categories: [
-      { label: 'Mobiles', value: '46%', percent: 100 },
-      { label: 'Electronics', value: '24%', percent: 52 },
-      { label: 'Appliances', value: '17%', percent: 37 },
-      { label: 'Fashion', value: '13%', percent: 28 },
-    ],
-  },
-  yearly: {
-    usersLabel: '48,300 (↑ 62%)',
-    savedLabel: 'Rs 94.2M',
-    trending: [
-      { label: 'iPhone 15', value: '61,200', percent: 100 },
-      { label: 'Samsung A54', value: '52,900', percent: 86 },
-      { label: 'Redmi Note 13', value: '44,100', percent: 72 },
-      { label: 'Air fryer', value: '38,700', percent: 63 },
-    ],
-    priceChanges: [
-      { product: 'Redmi Note 13 8/256', from: 'Rs 64,999', to: 'Rs 54,999', changePercent: -15.4 },
-      { product: 'Anker 20000mAh PB', from: 'Rs 10,900', to: 'Rs 8,450', changePercent: -22.5 },
-      { product: 'PS5 Slim', from: 'Rs 129,900', to: 'Rs 149,900', changePercent: 15.4 },
-    ],
-    storeAverages: [
-      { label: 'Telemart', value: 'Rs 38,600', percent: 82 },
-      { label: 'Daraz', value: 'Rs 41,400', percent: 88 },
-      { label: 'Mega.pk', value: 'Rs 43,900', percent: 94 },
-      { label: 'Amazon', value: 'Rs 46,900', percent: 100 },
-    ],
-    categories: [
-      { label: 'Mobiles', value: '49%', percent: 100 },
-      { label: 'Electronics', value: '22%', percent: 45 },
-      { label: 'Appliances', value: '16%', percent: 33 },
-      { label: 'Fashion', value: '13%', percent: 27 },
-    ],
-  },
-};
-
-function buildCsv(period: Period, data: ReportData): string {
+function buildCsv(period: Period, data: ReportsResponse): string {
   const lines: string[] = [];
   lines.push(`Pricely admin report — ${period}`);
+  lines.push(`Generated,${new Date().toISOString()}`);
   lines.push('');
   lines.push('Summary');
   lines.push('Metric,Value');
-  lines.push(`Active shoppers,${data.usersLabel}`);
-  lines.push(`Saved by shoppers,${data.savedLabel}`);
+  lines.push(`Active shoppers,${data.activeShoppers.value}`);
+  lines.push(`Saved by shoppers,${data.savedByShoppers.amount}`);
   lines.push('');
   lines.push('Trending searches');
   lines.push('Search,Count');
-  data.trending.forEach((r) => lines.push(`${r.label},${r.value}`));
+  data.trendingSearches.forEach((r) => lines.push(`"${r.label}",${r.count}`));
   lines.push('');
   lines.push('Price changes');
   lines.push('Product,From,To,Change %');
-  data.priceChanges.forEach((p) => lines.push(`${p.product},${p.from},${p.to},${p.changePercent}%`));
+  data.priceChanges.forEach((p) =>
+    lines.push(`"${p.product}",${p.fromPrice},${p.toPrice},${p.changePercent}`));
   lines.push('');
   lines.push('Average price by store');
   lines.push('Store,Average price');
-  data.storeAverages.forEach((s) => lines.push(`${s.label},${s.value}`));
+  data.storeAverages.forEach((s) => lines.push(`"${s.label}",${s.amount}`));
   lines.push('');
   lines.push('Category breakdown');
-  lines.push('Category,Share of searches');
-  data.categories.forEach((c) => lines.push(`${c.label},${c.value}`));
+  lines.push('Category,Clicks');
+  data.categories.forEach((c) => lines.push(`"${c.label}",${c.count}`));
   return lines.join('\n');
 }
 
@@ -148,40 +55,72 @@ interface ReportsScreenProps {
 
 export default function ReportsScreen({ navigation }: ReportsScreenProps) {
   const [period, setPeriod] = useState<Period>('weekly');
+  const [data, setData] = useState<ReportsResponse | null>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [downloading, setDownloading] = useState(false);
-  const [downloadError, setDownloadError] = useState<string | undefined>();
-  const data = REPORT_DATA[period];
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  const load = useCallback(async (p: Period) => {
+    try {
+      setError(null);
+      setData(await api.reports(p));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load reports.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  // Switching period refetches — each window is a different server query,
+  // not a filter over data we already hold.
+  useEffect(() => {
+    setLoading(true);
+    void load(period);
+  }, [period, load]);
 
   const handleDownload = async () => {
-    setDownloadError(undefined);
+    if (!data) return;
+
+    setDownloadError(null);
     setDownloading(true);
+
     try {
-      const csv = buildCsv(period, data);
       const file = new File(Paths.cache, `pricely-report-${period}.csv`);
       if (file.exists) file.delete();
       file.create();
-      file.write(csv);
+      file.write(buildCsv(period, data));
 
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(file.uri, { mimeType: 'text/csv', dialogTitle: 'Download report' });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(file.uri, {
+          mimeType: 'text/csv',
+          dialogTitle: 'Download report',
+        });
       } else {
         setDownloadError('Sharing is not available on this device.');
       }
-    } catch (error) {
-      setDownloadError(error instanceof Error ? error.message : 'Unable to generate the report file.');
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : 'Unable to generate the report file.');
     } finally {
       setDownloading(false);
     }
   };
 
-  return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+  const header = (
+    <>
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.75}>
           <ArrowLeft size={20} color={colors.textPrimary} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.downloadBtn} onPress={() => void handleDownload()} disabled={downloading}>
+        <TouchableOpacity
+          style={[styles.downloadBtn, (downloading || !data) && styles.btnDisabled]}
+          onPress={() => void handleDownload()}
+          disabled={downloading || !data}
+        >
           <Download size={14} color="#fff" />
           <Text style={styles.downloadBtnText}>{downloading ? 'Preparing…' : 'Download CSV'}</Text>
         </TouchableOpacity>
@@ -198,53 +137,119 @@ export default function ReportsScreen({ navigation }: ReportsScreenProps) {
             style={[styles.periodOption, period === p.key && styles.periodOptionActive]}
             onPress={() => setPeriod(p.key)}
           >
-            <Text style={[styles.periodText, period === p.key && styles.periodTextActive]}>{p.label}</Text>
+            <Text style={[styles.periodText, period === p.key && styles.periodTextActive]}>
+              {p.label}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
+    </>
+  );
+
+  if (loading) {
+    return (
+      <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+        {header}
+        <ActivityIndicator color={colors.accentSolid} style={styles.spinner} />
+      </ScrollView>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+        {header}
+        <Text style={styles.errorTitle}>Couldn't load reports</Text>
+        <Text style={styles.errorBody}>{error}</Text>
+        <TouchableOpacity
+          style={styles.retryBtn}
+          onPress={() => { setLoading(true); void load(period); }}
+        >
+          <Text style={styles.retryText}>Try again</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  }
+
+  const shoppersTrend =
+    data.activeShoppers.changePercent === null
+      ? ''
+      : ` (${data.activeShoppers.changePercent >= 0 ? '↑' : '↓'} ${Math.abs(data.activeShoppers.changePercent)}%)`;
+
+  return (
+    <ScrollView
+      style={styles.root}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(period); }} />
+      }
+    >
+      {header}
 
       <View style={styles.statGrid}>
-        <StatTile value={data.usersLabel} label="Active shoppers" />
-        <StatTile value={data.savedLabel} label="Saved by shoppers" />
+        <StatTile
+          value={`${data.activeShoppers.value.toLocaleString()}${shoppersTrend}`}
+          label="Active shoppers"
+        />
+        <StatTile
+          value={formatPrice(data.savedByShoppers.amount, data.savedByShoppers.currency)}
+          label="Saved by shoppers"
+        />
       </View>
 
       <Text style={styles.sectionTitle}>Trending searches</Text>
       <View style={styles.barList}>
-        {data.trending.map((r) => (
-          <BarRow key={r.label} {...r} color={colors.accentMango} />
-        ))}
+        {data.trendingSearches.length === 0 ? (
+          <Text style={styles.emptyText}>No searches in this period.</Text>
+        ) : (
+          toBarRows(data.trendingSearches).map((r) => (
+            <BarRow key={r.label} {...r} color={colors.accentMango} />
+          ))
+        )}
       </View>
 
       <Text style={styles.sectionTitle}>Price changes</Text>
       <View style={styles.list}>
-        {data.priceChanges.map((p) => {
-          const dropped = p.changePercent < 0;
-          return (
-            <View key={p.product} style={styles.priceRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.priceProduct}>{p.product}</Text>
-                <Text style={styles.priceMeta}>{p.from} → {p.to}</Text>
+        {data.priceChanges.length === 0 ? (
+          <Text style={styles.emptyText}>No price movement recorded yet.</Text>
+        ) : (
+          data.priceChanges.map((p) => {
+            const dropped = p.changePercent < 0;
+            return (
+              <View key={p.product} style={styles.priceRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.priceProduct}>{p.product}</Text>
+                  <Text style={styles.priceMeta}>
+                    {formatPrice(p.fromPrice)} → {formatPrice(p.toPrice)}
+                  </Text>
+                </View>
+                <Text style={[styles.priceChange, dropped ? styles.priceDown : styles.priceUp]}>
+                  {dropped ? '▼' : '▲'} {Math.abs(p.changePercent)}%
+                </Text>
               </View>
-              <Text style={[styles.priceChange, dropped ? styles.priceDown : styles.priceUp]}>
-                {dropped ? '▼' : '▲'} {Math.abs(p.changePercent)}%
-              </Text>
-            </View>
-          );
-        })}
+            );
+          })
+        )}
       </View>
 
       <Text style={styles.sectionTitle}>Average price by store</Text>
       <View style={styles.barList}>
-        {data.storeAverages.map((r) => (
-          <BarRow key={r.label} {...r} />
-        ))}
+        {data.storeAverages.length === 0 ? (
+          <Text style={styles.emptyText}>No listings to average yet.</Text>
+        ) : (
+          toMoneyBarRows(data.storeAverages).map((r) => <BarRow key={r.label} {...r} />)
+        )}
       </View>
 
       <Text style={styles.sectionTitle}>Category breakdown</Text>
       <View style={styles.barList}>
-        {data.categories.map((r) => (
-          <BarRow key={r.label} {...r} color={colors.adminAccent} />
-        ))}
+        {data.categories.length === 0 ? (
+          <Text style={styles.emptyText}>No click-throughs in this period.</Text>
+        ) : (
+          toShareBarRows(data.categories).map((r) => (
+            <BarRow key={r.label} {...r} color={colors.adminAccent} />
+          ))
+        )}
       </View>
     </ScrollView>
   );
@@ -253,6 +258,7 @@ export default function ReportsScreen({ navigation }: ReportsScreenProps) {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 40 },
+  spinner: { marginTop: 40 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 },
   backBtn: {
     width: 40,
@@ -271,12 +277,16 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     paddingHorizontal: 13,
   },
+  btnDisabled: { opacity: 0.6 },
   downloadBtnText: { fontSize: 11.5, fontFamily: fonts.button, color: '#fff' },
-
   title: { fontSize: 22, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
   subtext: { fontSize: 13.5, fontFamily: fonts.body, color: colors.textSecondary, lineHeight: 19 },
   errorText: { fontSize: 11.5, fontFamily: fonts.body, color: colors.danger, fontWeight: '600', marginTop: 8 },
-
+  errorTitle: { fontSize: 15, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginTop: 20, marginBottom: 6, textAlign: 'center' },
+  errorBody: { fontSize: 12.5, fontFamily: fonts.body, color: colors.textSecondary, textAlign: 'center', marginBottom: 16 },
+  retryBtn: { alignSelf: 'center', backgroundColor: colors.accentSolid, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 22 },
+  retryText: { fontSize: 12.5, fontFamily: fonts.button, color: '#fff' },
+  emptyText: { fontSize: 12, fontFamily: fonts.body, color: colors.textTertiary, fontStyle: 'italic', paddingVertical: 8 },
   periodRow: {
     flexDirection: 'row',
     backgroundColor: colors.surface,
@@ -292,12 +302,9 @@ const styles = StyleSheet.create({
   periodOptionActive: { backgroundColor: colors.accentTint },
   periodText: { fontSize: 12, fontFamily: fonts.button, color: colors.textTertiary },
   periodTextActive: { color: colors.accentSolid },
-
   statGrid: { flexDirection: 'row', gap: 10, marginBottom: 22 },
-
   sectionTitle: { fontSize: 16, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 },
   barList: { marginBottom: 22 },
-
   list: { gap: 8, marginBottom: 22 },
   priceRow: {
     flexDirection: 'row',

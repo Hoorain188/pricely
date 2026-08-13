@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
-using Pricely.Api.Data;
+using Pricely.Infrastructure;
+using Pricely.Core.Entities;
 using Pricely.Api.Dtos;
 using Pricely.Api.Models;
 
@@ -16,13 +17,13 @@ public class TeamService
 {
     private static readonly TimeSpan InviteLifetime = TimeSpan.FromDays(7);
 
-    private readonly PricelyDbContext _db;
+    private readonly AppDbContext _db;
     private readonly IActivityLogger _activity;
     private readonly IEmailSender _email;
     private readonly ITokenService _tokens;
 
     public TeamService(
-        PricelyDbContext db,
+        AppDbContext db,
         IActivityLogger activity,
         IEmailSender email,
         ITokenService tokens)
@@ -38,7 +39,7 @@ public class TeamService
     // Both of these materialise with ToListAsync BEFORE building the DTO, so
     // ToWire() runs as C#. Projected straight into the query, EF would turn
     // it into a SQL cast and silently produce a different spelling.
-    public async Task<List<TeamMemberDto>> GetMembersAsync(CancellationToken ct)
+    public async Task<List<TeamMemberView>> GetMembersAsync(CancellationToken ct)
     {
         var members = await _db.Users
             .Where(u => u.Role != UserRole.User)
@@ -47,11 +48,11 @@ public class TeamService
             .ToListAsync(ct);
 
         return members
-            .Select(u => new TeamMemberDto(u.Id, u.Name, u.Email, u.Role.ToWire(), u.IsActive, u.CreatedAt))
+            .Select(u => new TeamMemberView(u.Id, u.Name, u.Email, u.Role.ToWire(), u.IsActive, u.CreatedAt))
             .ToList();
     }
 
-    public async Task<List<TeamRequestDto>> GetRequestsAsync(TeamRequestStatus? status, CancellationToken ct)
+    public async Task<List<TeamRequestView>> GetRequestsAsync(TeamRequestStatus? status, CancellationToken ct)
     {
         var query = _db.TeamRequests.AsQueryable();
         if (status is not null)
@@ -67,7 +68,7 @@ public class TeamService
             .ToListAsync(ct);
 
         return requests
-            .Select(t => new TeamRequestDto(
+            .Select(t => new TeamRequestView(
                 t.Id, t.Email, t.Name, t.RequestedRole.ToWire(),
                 t.Type.ToWire(), t.Status.ToWire(),
                 t.CreatedAt, t.ExpiresAt))
@@ -75,7 +76,7 @@ public class TeamService
     }
 
     public async Task<List<ActivityLogDto>> GetActivityAsync(int limit, CancellationToken ct) =>
-        await _db.ActivityLogs
+        await _db.ActivityLog
             .Include(a => a.Actor)
             .OrderByDescending(a => a.CreatedAt)
             .Take(Math.Clamp(limit, 1, 200))
@@ -85,7 +86,7 @@ public class TeamService
 
     // ── Approving / rejecting the pending queue ──────────────────────────
 
-    public async Task<TeamMemberDto> ApproveAsync(long actorId, long requestId, CancellationToken ct)
+    public async Task<TeamMemberView> ApproveAsync(long actorId, long requestId, CancellationToken ct)
     {
         var request = await _db.TeamRequests
             .Include(t => t.User)
@@ -111,12 +112,12 @@ public class TeamService
         request.ReviewedBy = actorId;
         request.ReviewedAt = DateTimeOffset.UtcNow;
 
-        _activity.Record(actorId, ActivityActions.ApproveTeamRequest, "team_request", request.Id,
+        _activity.Record(ActivityActions.ApproveTeamRequest, "team_request", request.Id,
             new { request.Email, role = request.RequestedRole.ToWire() });
 
         await _db.SaveChangesAsync(ct);
 
-        return new TeamMemberDto(user.Id, user.Name, user.Email, user.Role.ToWire(), user.IsActive, user.CreatedAt);
+        return new TeamMemberView(user.Id, user.Name, user.Email, user.Role.ToWire(), user.IsActive, user.CreatedAt);
     }
 
     public async Task RejectAsync(long actorId, long requestId, CancellationToken ct)
@@ -142,7 +143,7 @@ public class TeamService
             user.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
-        _activity.Record(actorId, ActivityActions.RejectTeamRequest, "team_request", request.Id,
+        _activity.Record(ActivityActions.RejectTeamRequest, "team_request", request.Id,
             new { request.Email });
 
         await _db.SaveChangesAsync(ct);
@@ -150,7 +151,7 @@ public class TeamService
 
     // ── Invites ──────────────────────────────────────────────────────────
 
-    public async Task<TeamRequestDto> InviteAsync(long actorId, InviteMemberRequest req, CancellationToken ct)
+    public async Task<TeamRequestView> InviteAsync(long actorId, InviteMemberInput req, CancellationToken ct)
     {
         var email = req.Email.Trim().ToLowerInvariant();
         var role = req.Role.ToUserRole();
@@ -183,13 +184,13 @@ public class TeamService
         };
 
         _db.TeamRequests.Add(request);
-        _activity.Record(actorId, ActivityActions.SendInvite, "team_request", null,
+        _activity.Record(ActivityActions.SendInvite, "team_request", null,
             new { email, role = role.ToWire() });
 
         await _db.SaveChangesAsync(ct);
         await _email.SendTeamInviteAsync(email, rawToken, role.ToWire(), ct);
 
-        return new TeamRequestDto(
+        return new TeamRequestView(
             request.Id, request.Email, request.Name, request.RequestedRole.ToWire(),
             request.Type.ToWire(), request.Status.ToWire(), request.CreatedAt, request.ExpiresAt);
     }
@@ -208,7 +209,7 @@ public class TeamService
         request.ReviewedAt = DateTimeOffset.UtcNow;
         request.InviteToken = null;      // the emailed link stops working immediately
 
-        _activity.Record(actorId, ActivityActions.RevokeInvite, "team_request", request.Id,
+        _activity.Record(ActivityActions.RevokeInvite, "team_request", request.Id,
             new { request.Email });
 
         await _db.SaveChangesAsync(ct);
@@ -216,7 +217,7 @@ public class TeamService
 
     // ── Changing / removing members ──────────────────────────────────────
 
-    public async Task<TeamMemberDto> ChangeRoleAsync(long actorId, long userId, ChangeRoleRequest req, CancellationToken ct)
+    public async Task<TeamMemberView> ChangeRoleAsync(long actorId, long userId, RoleChangeInput req, CancellationToken ct)
     {
         var user = await _db.Users
             .Include(u => u.Sessions)
@@ -246,7 +247,7 @@ public class TeamService
         // the sessions are revoked to force a fresh login with the new one.
         RevokeSessions(user);
 
-        _activity.Record(actorId, ActivityActions.ChangeRole, "user", user.Id,
+        _activity.Record(ActivityActions.ChangeRole, "user", user.Id,
             new { user.Email, from = previous.ToWire(), to = newRole.ToWire() });
 
         await _db.SaveChangesAsync(ct);
@@ -277,7 +278,7 @@ public class TeamService
         user.UpdatedAt = DateTimeOffset.UtcNow;
         RevokeSessions(user);
 
-        _activity.Record(actorId, ActivityActions.RemoveMember, "user", user.Id, new { user.Email });
+        _activity.Record(ActivityActions.RemoveMember, "user", user.Id, new { user.Email });
 
         await _db.SaveChangesAsync(ct);
     }
@@ -317,6 +318,6 @@ public class TeamService
             session.RevokedAt = now;
     }
 
-    private static TeamMemberDto ToDto(User u) =>
+    private static TeamMemberView ToDto(User u) =>
         new(u.Id, u.Name, u.Email, u.Role.ToWire(), u.IsActive, u.CreatedAt);
 }

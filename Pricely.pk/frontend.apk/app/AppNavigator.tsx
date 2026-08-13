@@ -35,6 +35,7 @@ const Tab = createBottomTabNavigator();
 function MainTabs() {
   return (
     <Tab.Navigator
+      backBehavior="history"
       screenOptions={{ headerShown: false }}
       tabBar={(props) => <AnimatedTabBar {...props} />}
     >

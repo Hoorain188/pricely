@@ -41,3 +41,14 @@ app-example
 # generated native folders
 /ios
 /android
+
+# .NET build output
+bin/
+obj/
+
+# local env
+.env
+
+# .NET build output (was previously committed)
+**/bin/
+**/obj/

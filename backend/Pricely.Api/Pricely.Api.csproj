@@ -1,24 +1,30 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UserSecretsId>8a21807b-725d-41fb-8f4d-4752b8e717ea</UserSecretsId>
+    <UserSecretsId>4ced2916-0855-434d-8b6f-83dee6344b67</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Admin side -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
+    <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
+
+    <!-- Auth side. Npgsql is not listed here: it arrives through
+         Pricely.Infrastructure, which owns the DbContext.
+         EFCore.NamingConventions is deliberately dropped too — AppDbContext
+         already does its own PascalCase→snake_case pass, and running both
+         would translate names twice. -->
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
-    <PackageReference Include="EFCore.NamingConventions" Version="8.0.3" />
     <PackageReference Include="MailKit" Version="4.17.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.28" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pricely.Core\Pricely.Core.csproj" />
+    <ProjectReference Include="..\Pricely.Infrastructure\Pricely.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput, Image, BackHandler } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { colors, fonts, radii, shadows, gradients } from '../theme/colors';
@@ -26,15 +26,38 @@ export default function ProfileScreen() {
   const { favorites, alerts } = useUserStore();
   
   const [menuOpen, setMenuOpen] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+
+  const handleBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Home');
+    }
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      if (menuOpen) {
+        setMenuOpen(false);
+        return true;
+      }
+      if (editModalVisible) {
+        setEditModalVisible(false);
+        return true;
+      }
+      handleBack();
+      return true;
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [navigation, menuOpen, editModalVisible]);
   
   // Custom dialogs visibility
   const [logoutDialogVisible, setLogoutDialogVisible] = useState(false);
   const [saveSuccessVisible, setSaveSuccessVisible] = useState(false);
   const [errorVisible, setErrorVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-
-  // Modal visibility
-  const [editModalVisible, setEditModalVisible] = useState(false);
 
   // Edit profile states
   const [editName, setEditName] = useState(user?.name || 'Samad Satti');
@@ -118,7 +141,7 @@ export default function ProfileScreen() {
           end={{ x: 1, y: 0 }}
           style={styles.header}
         >
-          <LottieBackButton onPress={() => navigation.navigate('Home')} size={30} />
+          <LottieBackButton onPress={handleBack} size={30} />
           <Text style={styles.headerTitle}>My Account</Text>
           <TouchableOpacity
             style={styles.menuButton}
@@ -353,8 +376,7 @@ export default function ProfileScreen() {
           else if (dest === 'Settings') navigation.navigate('Settings');
           else if (dest === 'Help & Support' || dest === 'HelpSupport' || dest === 'Help') navigation.navigate('HelpSupport');
           else if (['Electronics', 'Fashion', 'Home & Living', 'Beauty', 'Appliances', 'Mobiles', 'Categories'].includes(dest)) {
-            const key = dest === 'Mobiles' ? 'electronics' : dest === 'Home & Living' ? 'home' : dest.toLowerCase();
-            navigation.navigate('Category', { categoryKey: key });
+            navigation.navigate('Category', { categoryKey: 'mobiles_tablets' });
           }
         }}
       />

@@ -49,25 +49,43 @@ export class ApiError extends Error {
 
 // ── Transport ───────────────────────────────────────────────────────────
 
+/**
+ * How long to wait before giving up on a request.
+ *
+ * fetch has no timeout of its own. A refused connection rejects immediately,
+ * but packets that are silently dropped — a firewall not allowing the port,
+ * the laptop asleep, the wrong network — never resolve at all, and the button
+ * sits on "Please wait" forever with nothing to tell the user. This turns
+ * that into an error they can act on.
+ */
+const REQUEST_TIMEOUT_MS = 15_000;
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let response: Response;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         ...(options.headers ?? {}),
       },
     });
-  } catch {
-    // fetch only rejects when the request never reached the server at all —
-    // usually the API isn't running, or the phone is on a different network.
+  } catch (error) {
+    const timedOut = (error as Error)?.name === 'AbortError';
     throw new ApiError(
       'network_error',
-      "Can't reach the server. Check it's running and that you're on the same WiFi.",
+      timedOut
+        ? `The server at ${API_BASE_URL} didn't respond. Check it's running, that you're on the same WiFi, and that your firewall allows it.`
+        : `Can't reach the server at ${API_BASE_URL}. Check it's running and that you're on the same WiFi.`,
       0,
     );
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (response.status === 204) return undefined as T;

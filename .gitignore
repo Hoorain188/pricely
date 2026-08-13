@@ -47,6 +47,10 @@ obj/
 
 app-example
 
+# AI / IDE tools config
+.claude/
+.vscode/
+
 # generated native folders
 /ios
 /android

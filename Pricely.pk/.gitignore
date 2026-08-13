@@ -45,6 +45,10 @@ obj/
 # typescript
 *.tsbuildinfo
 
+# AI / IDE tools config
+.claude/
+.vscode/
+
 # generated native folders
 /ios
 /android

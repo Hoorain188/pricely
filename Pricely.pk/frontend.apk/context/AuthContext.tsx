@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import * as authService from '../services/authService';
+import { setApiAuthToken } from '../app/api/client';
 
 // ── Types ──
 export interface User {
@@ -49,6 +50,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (error) {
       console.warn('Failed to store auth data:', error);
     }
+    // Admin screens use a separate client; keep its token in step or every
+    // admin call goes out unauthenticated and comes back 401.
+    setApiAuthToken(token);
     set({ user, token, refreshToken: nextRefresh, isAuthenticated: true });
   },
 
@@ -73,6 +77,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (error) {
       console.warn('Failed to clear auth data:', error);
     }
+    setApiAuthToken(null);
     set({ user: null, token: null, refreshToken: null, isAuthenticated: false });
   },
 
@@ -98,6 +103,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           await SecureStore.setItemAsync(TOKEN_KEY, renewed.accessToken);
           await SecureStore.setItemAsync(REFRESH_KEY, renewed.refreshToken);
           await SecureStore.setItemAsync(USER_KEY, JSON.stringify(renewed.user));
+          setApiAuthToken(renewed.accessToken);
           set({
             user: renewed.user,
             token: renewed.accessToken,
@@ -122,6 +128,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
       }
 
+      setApiAuthToken(token);
       set({ user, token, refreshToken: storedRefresh, isAuthenticated: true, isLoading: false });
     } catch (error) {
       console.warn('Failed to load stored auth:', error);

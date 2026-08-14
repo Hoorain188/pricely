@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Pricely.Api.Authorization;
 using Pricely.Api.Services;
 using Pricely.Core.Dtos;
 using Pricely.Core.Entities;
@@ -9,6 +11,10 @@ namespace Pricely.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/admin/me")]
+// "me" is whoever the token says it is, so this cannot work unauthenticated
+// at all — ICurrentUser.Id would be 0 and the read would silently hit the
+// wrong row.
+[Authorize(Policy = Policies.BackOffice)]
 public class SettingsController : ControllerBase
 {
     private readonly AppDbContext _db;

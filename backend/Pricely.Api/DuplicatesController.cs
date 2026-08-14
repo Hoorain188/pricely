@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Pricely.Api.Authorization;
 using Pricely.Api.Services;
 using Pricely.Core.Dtos;
 using Pricely.Core.Entities;
@@ -9,8 +11,9 @@ namespace Pricely.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/admin")]
-// TODO: [Authorize(Roles = "Admin,Support")] on the write actions,
-//       [Authorize(Roles = "Admin,Support,ReadOnly")] on the list.
+// Read-only can look at the queue; merging, rejecting and splitting are
+// Admin and Support, per the plan left in the TODO this replaces.
+[Authorize(Policy = Policies.BackOffice)]
 public class DuplicatesController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -90,6 +93,7 @@ public class DuplicatesController : ControllerBase
     }
 
     /// <summary>Merge the selected listings into one product.</summary>
+    [Authorize(Policy = Policies.BackOfficeWrite)]
     [HttpPost("duplicates/{groupId:long}/merge")]
     public async Task<ActionResult<DuplicateActionResponse>> Merge(
         long groupId, MergeRequest req, CancellationToken ct)
@@ -154,6 +158,7 @@ public class DuplicatesController : ControllerBase
     }
 
     /// <summary>"Not a match" — the listings go back to unmatched so the matcher can retry.</summary>
+    [Authorize(Policy = Policies.BackOfficeWrite)]
     [HttpPost("duplicates/{groupId:long}/reject")]
     public async Task<ActionResult<DuplicateActionResponse>> Reject(long groupId, CancellationToken ct)
     {
@@ -187,6 +192,7 @@ public class DuplicatesController : ControllerBase
     /// goes back to needs_review, so it reappears in the review queue.
     /// Without reopening the group the split row vanishes from both tabs.
     /// </summary>
+    [Authorize(Policy = Policies.BackOfficeWrite)]
     [HttpPost("products/{productId:long}/split")]
     public async Task<ActionResult<DuplicateActionResponse>> Split(long productId, CancellationToken ct)
     {

@@ -107,6 +107,10 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .AddRequirements(new ActiveBackOfficeRequirement(UserRole.Admin, UserRole.Support)));
 
+    options.AddPolicy(Policies.BackOfficeWrite, policy => policy
+        .RequireAuthenticatedUser()
+        .AddRequirements(new ActiveBackOfficeRequirement(UserRole.Admin, UserRole.Support)));
+
     options.AddPolicy(Policies.AdminOnly, policy => policy
         .RequireAuthenticatedUser()
         .AddRequirements(new ActiveBackOfficeRequirement(UserRole.Admin)));

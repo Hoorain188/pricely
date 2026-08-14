@@ -8,8 +8,19 @@ import Constants from 'expo-constants';
  * Single Backend Base URL Configuration Constant:
  * Dynamically resolves your PC's local Wi-Fi IP address when running via Expo Go on a physical phone.
  * Falls back to 10.0.2.2 for Android Emulator.
+ *
+ * These are the customer-facing endpoints (browse, search, product detail),
+ * served by PriceCompare.Api on 5079 — a different process from the auth and
+ * admin API on 5099, which config/api.ts resolves. Two ports, two variables.
+ *
+ * EXPO_PUBLIC_SCRAPER_API_URL overrides everything below, and MUST be set for
+ * a standalone build: outside Expo Go there is no hostUri to borrow, and the
+ * 10.0.2.2 fallback only means anything to the Android emulator.
  */
 const getApiBaseUrl = (): string => {
+  const override = process.env.EXPO_PUBLIC_SCRAPER_API_URL;
+  if (override) return override.replace(/\/$/, '');
+
   const host = Constants.expoConfig?.hostUri?.split(':')[0];
   if (host && host !== 'localhost' && host !== '127.0.0.1') {
     return `http://${host}:5079`;

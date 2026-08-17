@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Pricely.Api.Authorization;
 using Pricely.Api.Services;
 using Pricely.Core.Entities;
 using Pricely.Infrastructure;
@@ -8,7 +10,7 @@ namespace Pricely.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/admin/scrapers")]
-// TODO: [Authorize(Roles = "Admin,Support")]
+[Authorize(Policy = Policies.BackOfficeWrite)]
 public class ScrapersController : ControllerBase
 {
     /// <summary>

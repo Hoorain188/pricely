@@ -5,7 +5,7 @@ import FloatingLabelInput from '../components/FloatingLabelInput';
 import PressExpandButton from '../components/Pressexpandbutton';
 import LottieCheckboxField from '../components/LottieCheckboxField';
 import { colors, fonts } from '../theme/colors';
-import { useAccountsStore } from '../context/AccountsContext';
+import * as authService from '../services/authService';
 
 const STEPS = 7;
 
@@ -50,7 +50,8 @@ const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupFor
   const [password, setPassword] = useState('');
   const [agree, setAgree] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
-  const { accountExists } = useAccountsStore();
+  const [formError, setFormError] = useState<string | undefined>();
+  const [loading, setLoading] = useState(false);
 
   useImperativeHandle(ref, () => ({
     playIn: () => {
@@ -78,7 +79,9 @@ const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupFor
 
     if (!email.trim()) next.email = 'Email is required';
     else if (!EMAIL_RE.test(email.trim())) next.email = 'Enter a valid email address';
-    else if (accountExists(email.trim())) next.email = 'An account with this email already exists';
+    // "already taken" is no longer checked here: only the server knows every
+    // account, and asking it up-front would leak which emails are registered.
+    // It comes back as an email_taken error when signup is submitted.
 
     if (!password) next.password = 'Password is required';
     else if (!PASSWORD_RE.test(password))
@@ -92,8 +95,32 @@ const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupFor
 
   const handleSignup = async () => {
     if (!validate()) return;
-    // The account is only fully authenticated after the OTP verification succeeds.
-    onSignedUp(email.trim(), name.trim(), password);
+    setFormError(undefined);
+    setLoading(true);
+
+    try {
+      // Creates the account (inactive) and sends the emailed code. Nothing is
+      // authenticated yet — that happens on the verify screen.
+      await authService.signup({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+        portal: role === 'admin' ? 'admin' : 'user',
+      });
+      onSignedUp(email.trim(), name.trim(), password);
+    } catch (error) {
+      // Duplicate emails surface here rather than during typing, because
+      // only the server knows every account.
+      if (error instanceof authService.ApiError && error.code === 'email_taken') {
+        setErrors((e) => ({ ...e, email: error.message }));
+      } else {
+        setFormError(
+          error instanceof authService.ApiError ? error.message : 'Could not create your account. Please try again.',
+        );
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -162,7 +189,8 @@ const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupFor
       </Reveal>
 
       <Reveal anim={anims[4]}>
-        <PressExpandButton label="Create account" onPress={handleSignup} style={styles.ctaSpacing} />
+        {formError ? <Text style={styles.formErrorText}>⚠ {formError}</Text> : null}
+        <PressExpandButton label="Create account" onPress={handleSignup} loading={loading} style={styles.ctaSpacing} />
       </Reveal>
 
       <Reveal anim={anims[5]} style={styles.dividerRow}>
@@ -195,6 +223,7 @@ const styles = StyleSheet.create({
   subtext: { fontSize: 15, fontFamily: fonts.body, color: colors.textSecondary, lineHeight: 21, marginBottom: 28 },
   formSpacing: { marginTop: 4 },
   link: { color: colors.accentSolid, fontFamily: fonts.button, fontSize: 13 },
+  formErrorText: { fontSize: 12, fontFamily: fonts.body, color: colors.danger, fontWeight: '600', marginBottom: 10 },
   ctaSpacing: { marginTop: 4, marginBottom: 24 },
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },

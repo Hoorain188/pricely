@@ -1,242 +1,149 @@
-using System.Security.Cryptography;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using Pricely.Api.Authorization;
+using Pricely.Api.Dtos;
 using Pricely.Api.Services;
 using Pricely.Core.Dtos;
 using Pricely.Core.Entities;
-using Pricely.Infrastructure;
 
 namespace Pricely.Api.Controllers;
 
+/// <summary>
+/// Back-office team management.
+///
+/// Routes and response shapes are unchanged from the admin branch, because the
+/// app's Manage Team Access screens already call them. What changed is what
+/// sits behind them:
+///
+///   • Authorisation is now enforced. This file previously carried
+///     "TODO: [Authorize(Roles = "Admin")] on every write action here" and no
+///     attributes, so approving yourself as an admin needed no token at all.
+///   • The work is delegated to TeamService, which carries the guards this
+///     controller never had: you cannot approve your own request, demote
+///     yourself, or remove yourself, and approving actually activates the
+///     account and sets its role rather than only marking the row reviewed.
+///   • Invites are hashed before storage and actually emailed. The previous
+///     version stored the raw token and left "TODO: send the email".
+///
+/// Two policies, deliberately split:
+///   TeamView  — Admin + Support may look (Read-only has no Users screen).
+///   AdminOnly — only Admin may approve, reject, invite, change a role, remove.
+///
+/// Both re-read the database rather than trusting the token's role claim.
+/// </summary>
 [ApiController]
 [Route("api/v1/admin/team")]
-// TODO: [Authorize(Roles = "Admin")] on every write action here.
+[Authorize]
 public class TeamController : ControllerBase
 {
-    private static readonly UserRole[] TeamRoles =
-        [UserRole.Admin, UserRole.Support, UserRole.ReadOnly];
+    private readonly TeamService _team;
 
-    private readonly AppDbContext _db;
-    private readonly IActivityLogger _log;
-    private readonly ICurrentUser _me;
+    public TeamController(TeamService team) => _team = team;
 
-    public TeamController(AppDbContext db, IActivityLogger log, ICurrentUser me)
-    {
-        _db  = db;
-        _log = log;
-        _me  = me;
-    }
+    // ── Reading ──────────────────────────────────────────────────────────
 
-    /// <summary>Admin team members. Customers (role = user) are excluded.</summary>
+    /// <summary>Team members. Shape kept as TeamResponse for the existing screen.</summary>
     [HttpGet]
-    public async Task<ActionResult<TeamResponse>> List(CancellationToken ct)
+    [Authorize(Policy = Policies.TeamView)]
+    public async Task<ActionResult<TeamResponse>> Members(CancellationToken ct)
     {
-        var members = await _db.Users
-            .Where(u => TeamRoles.Contains(u.Role))
-            .OrderBy(u => u.Name)
-            .ToListAsync(ct);
-
+        var members = await _team.GetMembersAsync(ct);
         var items = members
-            .Select(u => new TeamMemberDto(
-                u.Id, u.Name, u.Email, u.Role.ToString().ToLowerInvariant(),
-                u.Location, u.AvatarInitial))
+            .Select(m => new TeamMemberDto(
+                m.Id, m.Name, m.Email, m.Role,
+                JobTitle: null,
+                AvatarInitial: string.IsNullOrWhiteSpace(m.Name) ? "?" : m.Name.Trim()[..1].ToUpperInvariant()))
             .ToList();
 
         return Ok(new TeamResponse(items.Count, items));
     }
 
-    /// <summary>
-    /// Inbound access requests — people who asked for admin access themselves.
-    /// The activity log in the mock references approving and rejecting these,
-    /// and team_requests.type = self_signup is where they live.
-    /// </summary>
     [HttpGet("requests")]
-    public async Task<ActionResult<IReadOnlyList<TeamRequestDto>>> Requests(CancellationToken ct)
+    [Authorize(Policy = Policies.TeamView)]
+    public async Task<ActionResult<IReadOnlyList<TeamRequestDto>>> Requests(
+        [FromQuery] TeamRequestStatus? status, CancellationToken ct)
     {
-        var rows = await _db.TeamRequests
-            .Where(t => t.Type == TeamRequestType.SelfSignup && t.Status == TeamRequestStatus.Pending)
-            .OrderBy(t => t.CreatedAt)
-            .ToListAsync(ct);
-
-        return Ok(rows.Select(t => new TeamRequestDto(
-            t.Id, t.Email, t.Name,
-            t.RequestedRole.ToString().ToLowerInvariant(),
-            t.CreatedAt)).ToList());
+        var requests = await _team.GetRequestsAsync(status ?? TeamRequestStatus.Pending, ct);
+        return Ok(requests
+            .Select(r => new TeamRequestDto(r.Id, r.Email, r.Name, r.RequestedRole, r.CreatedAt))
+            .ToList());
     }
 
-    /// <summary>Approve an access request. Issues a token so they can set a password.</summary>
+    /// <summary>Who did what. Backs the Activity log screen.</summary>
+    [HttpGet("activity")]
+    [Authorize(Policy = Policies.TeamView)]
+    public async Task<ActionResult<List<ActivityLogDto>>> Activity(
+        [FromQuery] int limit = 50, CancellationToken ct = default)
+        => Ok(await _team.GetActivityAsync(limit, ct));
+
+    // ── Approving / rejecting ────────────────────────────────────────────
+
     [HttpPost("requests/{requestId:long}/approve")]
+    [Authorize(Policy = Policies.AdminOnly)]
     public async Task<IActionResult> ApproveRequest(long requestId, CancellationToken ct)
     {
-        var req = await _db.TeamRequests.FirstOrDefaultAsync(t => t.Id == requestId, ct);
-        if (req is null) return NotFound();
-
-        if (req.Status != TeamRequestStatus.Pending)
-            return Conflict(new { title = "This request has already been reviewed" });
-
-        req.Status      = TeamRequestStatus.Approved;
-        req.ReviewedBy  = _me.Id;
-        req.ReviewedAt  = DateTimeOffset.UtcNow;
-        req.InviteToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-
-        _log.Record("team.request_approved", "team_request", requestId,
-            new { email = req.Email, name = req.Name });
-
-        await _db.SaveChangesAsync(ct);
-
-        // TODO: email the token so they can set a password.
+        await _team.ApproveAsync(CurrentUserId, requestId, ct);
         return NoContent();
     }
 
-    /// <summary>Reject an access request.</summary>
     [HttpPost("requests/{requestId:long}/reject")]
+    [Authorize(Policy = Policies.AdminOnly)]
     public async Task<IActionResult> RejectRequest(long requestId, CancellationToken ct)
     {
-        var req = await _db.TeamRequests.FirstOrDefaultAsync(t => t.Id == requestId, ct);
-        if (req is null) return NotFound();
-
-        if (req.Status != TeamRequestStatus.Pending)
-            return Conflict(new { title = "This request has already been reviewed" });
-
-        req.Status     = TeamRequestStatus.Rejected;
-        req.ReviewedBy = _me.Id;
-        req.ReviewedAt = DateTimeOffset.UtcNow;
-
-        _log.Record("team.request_rejected", "team_request", requestId,
-            new { email = req.Email, name = req.Name });
-
-        await _db.SaveChangesAsync(ct);
+        await _team.RejectAsync(CurrentUserId, requestId, ct);
         return NoContent();
     }
 
-    /// <summary>Invite someone by email. They get a link to set their password.</summary>
+    // ── Invites ──────────────────────────────────────────────────────────
+
     [HttpPost("invites")]
+    [Authorize(Policy = Policies.AdminOnly)]
     public async Task<ActionResult<InviteResponse>> Invite(InviteRequest req, CancellationToken ct)
     {
-        if (!TryParseTeamRole(req.Role, out var role))
-            return BadRequest(new { title = $"'{req.Role}' is not a valid team role" });
+        if (!Enum.TryParse<AssignableRole>(req.Role, ignoreCase: true, out var role))
+            throw new AuthException("validation_error", $"'{req.Role}' is not a valid team role.");
 
-        var email = req.Email.Trim().ToLowerInvariant();
-
-        if (await _db.Users.AnyAsync(u => u.Email == email, ct))
-            return Conflict(new { title = "That email already has an account" });
-
-        if (await _db.TeamRequests.AnyAsync(
-                t => t.Email == email && t.Status == TeamRequestStatus.Pending, ct))
-            return Conflict(new { title = "An invite is already pending for that email" });
-
-        var invite = new TeamRequest
-        {
-            Email         = email,
-            RequestedRole = role,
-            Type          = TeamRequestType.Invite,
-            Status        = TeamRequestStatus.Pending,
-            InvitedBy     = _me.Id,
-            InviteToken   = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
-            CreatedAt     = DateTimeOffset.UtcNow
-        };
-
-        _db.TeamRequests.Add(invite);
-        _log.Record("team.invited", "team_request", null,
-            new { email, role = role.ToString().ToLowerInvariant() });
-
-        await _db.SaveChangesAsync(ct);
-
-        // TODO: send the email containing InviteToken. Until an email service
-        // is wired up the invite exists but nobody is told about it.
-        return Ok(new InviteResponse(
-            invite.Id, invite.Email,
-            invite.RequestedRole.ToString().ToLowerInvariant(),
-            invite.CreatedAt));
+        var created = await _team.InviteAsync(CurrentUserId, new InviteMemberInput(req.Email, role), ct);
+        return Ok(new InviteResponse(created.Id, created.Email, created.RequestedRole, created.CreatedAt));
     }
 
-    /// <summary>Change a member's role.</summary>
+    /// <summary>Cancels a pending invite; the emailed link stops working immediately.</summary>
+    [HttpDelete("invites/{requestId:long}")]
+    [Authorize(Policy = Policies.AdminOnly)]
+    public async Task<IActionResult> RevokeInvite(long requestId, CancellationToken ct)
+    {
+        await _team.RevokeInviteAsync(CurrentUserId, requestId, ct);
+        return NoContent();
+    }
+
+    // ── Members ──────────────────────────────────────────────────────────
+
     [HttpPatch("{userId:long}/role")]
+    [Authorize(Policy = Policies.AdminOnly)]
     public async Task<ActionResult<TeamMemberDto>> ChangeRole(
         long userId, ChangeRoleRequest req, CancellationToken ct)
     {
-        if (!TryParseTeamRole(req.Role, out var role))
-            return BadRequest(new { title = $"'{req.Role}' is not a valid team role" });
+        if (!Enum.TryParse<AssignableRole>(req.Role, ignoreCase: true, out var role))
+            throw new AuthException("validation_error", $"'{req.Role}' is not a valid team role.");
 
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
-        if (user is null || !TeamRoles.Contains(user.Role)) return NotFound();
-
-        var guard = await GuardAsync(user, ct);
-        if (guard is not null) return guard;
-
-        var oldRole = user.Role;
-        user.Role      = role;
-        user.UpdatedAt = DateTimeOffset.UtcNow;
-
-        _log.Record("team.role_changed", "user", userId, new
-        {
-            name = user.Name,
-            from = oldRole.ToString().ToLowerInvariant(),
-            to   = role.ToString().ToLowerInvariant()
-        });
-
-        await _db.SaveChangesAsync(ct);
-
+        var m = await _team.ChangeRoleAsync(CurrentUserId, userId, new RoleChangeInput(role), ct);
         return Ok(new TeamMemberDto(
-            user.Id, user.Name, user.Email,
-            user.Role.ToString().ToLowerInvariant(),
-            user.Location, user.AvatarInitial));
+            m.Id, m.Name, m.Email, m.Role,
+            JobTitle: null,
+            AvatarInitial: string.IsNullOrWhiteSpace(m.Name) ? "?" : m.Name.Trim()[..1].ToUpperInvariant()));
     }
 
-    /// <summary>Remove a member from the admin team.</summary>
     [HttpDelete("{userId:long}")]
-    public async Task<IActionResult> Remove(long userId, CancellationToken ct)
+    [Authorize(Policy = Policies.AdminOnly)]
+    public async Task<IActionResult> RemoveMember(long userId, CancellationToken ct)
     {
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
-        if (user is null || !TeamRoles.Contains(user.Role)) return NotFound();
-
-        var guard = await GuardAsync(user, ct);
-        if (guard is not null) return guard;
-
-        // Demote rather than delete: activity_log rows point at this user,
-        // and deleting would either break those or erase the history.
-        user.Role      = UserRole.User;
-        user.IsActive  = false;
-        user.UpdatedAt = DateTimeOffset.UtcNow;
-
-        _log.Record("team.removed", "user", userId, new { name = user.Name });
-        await _db.SaveChangesAsync(ct);
-
+        await _team.RemoveMemberAsync(CurrentUserId, userId, ct);
         return NoContent();
     }
 
-    /// <summary>
-    /// Accepts any casing the app sends: "admin", "Admin", "readonly", "ReadOnly".
-    /// Rejects "user", since a customer is not a team role.
-    /// </summary>
-    private static bool TryParseTeamRole(string? value, out UserRole role)
-    {
-        role = default;
-        return !string.IsNullOrWhiteSpace(value)
-            && Enum.TryParse(value, ignoreCase: true, out role)
-            && TeamRoles.Contains(role);
-    }
-
-    /// <summary>
-    /// The two rules that stop the admin panel locking everyone out:
-    /// nobody edits themselves, and the last Admin cannot be demoted or removed.
-    /// The demo activity log shows "Removed Bilal from the team" performed by
-    /// Bilal — exactly the situation this prevents.
-    /// </summary>
-    private async Task<ActionResult?> GuardAsync(User target, CancellationToken ct)
-    {
-        if (target.Id == _me.Id)
-            return UnprocessableEntity(new { title = "You cannot change your own access" });
-
-        if (target.Role == UserRole.Admin)
-        {
-            var admins = await _db.Users.CountAsync(
-                u => u.Role == UserRole.Admin && u.IsActive, ct);
-
-            if (admins <= 1)
-                return UnprocessableEntity(new { title = "There must be at least one admin" });
-        }
-
-        return null;
-    }
+    private long CurrentUserId =>
+        long.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+            ?? throw new AuthException("unauthorized", "Not signed in.", StatusCodes.Status401Unauthorized));
 }

@@ -1,6 +1,8 @@
 using System.Text;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Pricely.Api.Authorization;
 using Pricely.Core.Dtos;
 using Pricely.Core.Entities;
 using Pricely.Infrastructure;
@@ -9,6 +11,9 @@ namespace Pricely.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/admin/customers")]
+// Customer names and email addresses, and an export that hands over the
+// lot in one request. Nothing here is safe to serve unauthenticated.
+[Authorize(Policy = Policies.BackOffice)]
 public class CustomersController : ControllerBase
 {
     private readonly AppDbContext _db;

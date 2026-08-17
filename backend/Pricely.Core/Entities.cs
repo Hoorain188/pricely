@@ -30,6 +30,9 @@ public class User
 
     public UserNotificationSettings? NotificationSettings { get; set; }
 
+    /// <summary>Logged-in devices. Auth revokes these on password or role change.</summary>
+    public ICollection<Session> Sessions { get; set; } = [];
+
     // First letter for the circular avatar on the Team screen
     public string AvatarInitial =>
         string.IsNullOrWhiteSpace(Name) ? "?" : Name[..1].ToUpperInvariant();
@@ -203,8 +206,18 @@ public class TeamRequest
     public long? UserId { get; set; }
 
     public string? InviteToken { get; set; }
+
+    /// <summary>
+    /// Invites expire — a link sitting in an old inbox is otherwise a standing
+    /// way into the back office. Added by db/003_team_and_hardening.sql.
+    /// </summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? ReviewedAt { get; set; }
+
+    /// <summary>The account this request unlocks. Null for invites with no account yet.</summary>
+    public User? User { get; set; }
 }
 
 /// <summary>Drives the Activity log screen.</summary>
@@ -240,6 +253,8 @@ public class Session
     public DateTimeOffset? RevokedAt { get; set; }
 
     public bool IsActive => RevokedAt is null;
+
+    public User User { get; set; } = null!;
 }
 
 public class UserNotificationSettings
@@ -259,4 +274,16 @@ public class VerificationCode
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? UsedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>
+    /// Wrong guesses so far. Without this a 6-digit code can be attacked one
+    /// request at a time until it lands, so the code dies after MaxAttempts.
+    /// Added by db/003_team_and_hardening.sql.
+    /// </summary>
+    public int Attempts { get; set; }
+
+    public const int MaxAttempts = 5;
+
+    public bool IsUsable(DateTimeOffset now) =>
+        UsedAt is null && ExpiresAt > now && Attempts < MaxAttempts;
 }

@@ -1,5 +1,6 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, Animated, StyleSheet, Easing, ViewStyle } from 'react-native';
+import { View, Text, TouchableOpacity, Animated, StyleSheet, Easing, ViewStyle, Platform } from 'react-native';
+import * as Device from 'expo-device';
 import { Mail, Lock } from 'lucide-react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import FloatingLabelInput from '../components/FloatingLabelInput';
@@ -7,7 +8,7 @@ import GradientButton from '../components/GradientButton';
 import LottieCheckboxField from '../components/LottieCheckboxField';
 import { colors, fonts } from '../theme/colors';
 import { useAuthStore } from '../context/AuthContext';
-import { useAccountsStore } from '../context/AccountsContext';
+import * as authService from '../services/authService';
 
 const STEPS = 6;
 
@@ -50,8 +51,8 @@ const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(function LoginForm(
   const [agree, setAgree] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [formError, setFormError] = useState<string | undefined>();
+  const [loading, setLoading] = useState(false);
   const { setAuth } = useAuthStore();
-  const { findAccount } = useAccountsStore();
 
   useImperativeHandle(ref, () => ({
     playIn: () => {
@@ -89,23 +90,33 @@ const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(function LoginForm(
   const handleLogin = async () => {
     if (!validate()) return;
     setFormError(undefined);
+    setLoading(true);
 
-    const account = findAccount(email, password);
-    if (!account) {
-      setFormError('No account matches that email and password.');
-      return;
-    }
-    // The ADMIN tab covers every back-office permission level (admin,
-    // support, readonly) — only the USER tab is reserved for shoppers.
-    const isBackOfficeAccount = account.role !== 'user';
-    const wantsBackOffice = role === 'admin';
-    if (isBackOfficeAccount !== wantsBackOffice) {
-      setFormError('We couldn’t sign you in with those credentials.');
-      return;
-    }
+    try {
+      // Which tab was pressed goes to the server as `portal`. The server
+      // checks it against the role stored on the account and refuses a
+      // mismatch — nothing here decides what access anyone gets.
+      const result = await authService.login({
+        email: email.trim(),
+        password,
+        portal: role === 'admin' ? 'admin' : 'user',
+        deviceName: `${Device.deviceName ?? Platform.OS} (${Platform.OS})`,
+      });
 
-    await setAuth({ id: account.id, name: account.name, email: account.email, role: account.role }, 'mock-jwt-token');
-    onAuthenticated?.();
+      await setAuth(result.user, result.accessToken, result.refreshToken);
+      onAuthenticated?.();
+    } catch (error) {
+      if (error instanceof authService.ApiError) {
+        // The server already writes these for a person to read, including
+        // the deliberately vague ones — showing them as-is avoids inventing
+        // a friendlier message that leaks more than the server intended.
+        setFormError(error.message);
+      } else {
+        setFormError('Something went wrong. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -166,7 +177,7 @@ const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(function LoginForm(
 
       <Reveal anim={anims[3]}>
         {formError ? <Text style={styles.formErrorText}>⚠ {formError}</Text> : null}
-        <GradientButton label="Sign in" onPress={handleLogin} style={styles.ctaSpacing} />
+        <GradientButton label="Sign in" onPress={handleLogin} loading={loading} style={styles.ctaSpacing} />
       </Reveal>
 
       <Reveal anim={anims[4]} style={styles.dividerRow}>

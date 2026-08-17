@@ -1,0 +1,17 @@
+# .NET build output
+bin/
+obj/
+out/
+
+# Rider / Visual Studio / VS Code
+.vs/
+.idea/
+*.user
+*.suo
+
+# Local config that may hold real values.
+# Secrets belong in `dotnet user-secrets` (stored outside the repo) or
+# environment variables — never in a committed file.
+appsettings.Local.json
+appsettings.*.Local.json
+.env

@@ -34,6 +34,12 @@ builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<IActivityLogger, ActivityLogger>();
 
 builder.Services.AddControllers();
+
+// ScrapersController posts to PriceCompare.Api to enqueue the real scrape job.
+// Base URL comes from config; falls back to the local dev port.
+//   dotnet user-secrets set "ScraperApi:BaseUrl" "http://localhost:5079"
+builder.Services.AddHttpClient();
+
 builder.Services.AddOpenApi();
 
 // The React Native app calls this from a different origin.

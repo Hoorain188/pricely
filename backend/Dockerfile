@@ -21,6 +21,12 @@ WORKDIR /app
 COPY --from=build /app .
 
 ENV ASPNETCORE_ENVIRONMENT=Production
+
+# See the note in Pricely.pk/PriceCompare.Api/Dockerfile — inotify instances
+# are a scarce, container-wide resource, and running out of them kills the
+# app before it can report anything useful.
+ENV DOTNET_USE_POLLING_FILE_WATCHER=1
+
 EXPOSE 8080
 
 # The host assigns the port at runtime, so it has to be read when the

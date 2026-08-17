@@ -17,6 +17,15 @@ WORKDIR /app
 COPY --from=build /app .
 
 ENV ASPNETCORE_ENVIRONMENT=Production
+
+# ASP.NET watches appsettings.json for changes, which costs one inotify
+# instance per config file. Render's containers allow 128 in total, and a
+# crash-looping service exhausts them — after which the app dies inside
+# WebApplication.CreateBuilder, before any of our own code runs, with an
+# IOException that says nothing about configuration. Polling has no such
+# limit, and nothing here edits its own config at runtime anyway.
+ENV DOTNET_USE_POLLING_FILE_WATCHER=1
+
 EXPOSE 8080
 
 # See backend/Dockerfile — the port comes from the host at runtime.

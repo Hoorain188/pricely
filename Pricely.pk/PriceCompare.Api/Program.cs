@@ -13,6 +13,18 @@ var builder = WebApplication.CreateBuilder(args);
 
 var connString = builder.Configuration.GetConnectionString("DefaultConnection");
 
+// Fail here, loudly, rather than 40 lines into a Hangfire stack trace.
+// Without this the first symptom is "The ConnectionString property has not
+// been initialized" thrown from RecurringJob.AddOrUpdate, which says nothing
+// about which setting is missing or where to put it.
+if (string.IsNullOrWhiteSpace(connString))
+{
+    throw new InvalidOperationException(
+        "ConnectionStrings:DefaultConnection is not set.\n" +
+        "  Locally : dotnet user-secrets set \"ConnectionStrings:DefaultConnection\" \"<neon connection string>\"\n" +
+        "  Deployed: set the ConnectionStrings__DefaultConnection environment variable (double underscore).");
+}
+
 builder.Services.AddOpenApi();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("ScraperClient", client =>

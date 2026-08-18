@@ -75,6 +75,9 @@ public class ScrapersController : ControllerBase
         if (alreadyRunning)
             return Conflict(new { title = $"A {store.Name} run is already in progress" });
 
+        // This opens the row; the scraper closes it when the job finishes.
+        // It has to happen here because PriceCompare.Api's ScraperRun model has
+        // no Status field, and the column is NOT NULL with no default.
         var run = new ScraperRun
         {
             StoreId      = storeId,
@@ -102,11 +105,6 @@ public class ScrapersController : ControllerBase
         {
             // Close the run as failed, otherwise it sits open for 15 minutes and
             // blocks retries while the scraper API is down.
-            run.Status       = ScraperRunStatus.Fail;
-            run.ErrorMessage = $"Could not reach the scraper API: {ex.Message}";
-            run.FinishedAt   = DateTimeOffset.UtcNow;
-            await _db.SaveChangesAsync(ct);
-
             return StatusCode(502, new
             {
                 title  = "The scraper API did not accept the job",

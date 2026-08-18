@@ -33,6 +33,11 @@ services:
         sync: false
       - key: Email__SmtpPassword
         sync: false
+      # ScrapersController posts here to enqueue a run. It falls back to
+      # localhost:5079, which is another container entirely once deployed —
+      # the Run button would return 502 without this.
+      - key: ScraperApi__BaseUrl
+        value: https://pricely-scraper-krep.onrender.com
 
   # ── Customer-facing browse/search + scrapers ────────────────────────────
   - type: web

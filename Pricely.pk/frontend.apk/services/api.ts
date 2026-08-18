@@ -30,6 +30,13 @@ const getApiBaseUrl = (): string => {
 
 export const API_BASE_URL = getApiBaseUrl();
 
+/**
+ * The deployed API sleeps after 15 minutes idle and takes 30-60s to wake, so
+ * 8s aborted the first request of every session and the screen reported a
+ * connection failure. Later requests return in well under a second.
+ */
+const REQUEST_TIMEOUT_MS = 60_000;
+
 export interface ApiProduct {
   title: string;
   store: string;
@@ -108,7 +115,7 @@ export async function fetchSearchProducts(query: string, store?: string): Promis
 
     const response = await axios.get<SearchResponse>(`${API_BASE_URL}/api/search`, {
       params,
-      timeout: 8000,
+      timeout: REQUEST_TIMEOUT_MS,
     });
 
     if (response.data && Array.isArray(response.data.results)) {
@@ -137,7 +144,7 @@ export async function fetchBrowseProducts(category: string, store?: string, seed
 
     const response = await axios.get<SearchResponse>(`${API_BASE_URL}/api/browse`, {
       params,
-      timeout: 8000,
+      timeout: REQUEST_TIMEOUT_MS,
     });
 
     if (response.data && Array.isArray(response.data.results)) {
@@ -159,7 +166,7 @@ export async function fetchProductDetail(handle: string): Promise<ProductDetail 
 
   try {
     const response = await axios.get<ProductDetail>(`${API_BASE_URL}/api/product/${encodeURIComponent(trimmed)}`, {
-      timeout: 8000,
+      timeout: REQUEST_TIMEOUT_MS,
     });
     return response.data || null;
   } catch (error: any) {
@@ -178,7 +185,7 @@ export async function fetchMegaPkProductDetail(productUrl: string): Promise<Prod
   try {
     const response = await axios.get<any>(`${API_BASE_URL}/api/megapk-product`, {
       params: { url: trimmed },
-      timeout: 8000,
+      timeout: REQUEST_TIMEOUT_MS,
     });
     const data = response.data;
     if (!data) return null;
@@ -210,7 +217,7 @@ export async function fetchStoreCategories(store: string): Promise<{ category: s
   try {
     const response = await axios.get<{ category: string; count: number }[]>(`${API_BASE_URL}/api/store-categories`, {
       params: { store: trimmed },
-      timeout: 8000,
+      timeout: REQUEST_TIMEOUT_MS,
     });
     return response.data || [];
   } catch (error: any) {

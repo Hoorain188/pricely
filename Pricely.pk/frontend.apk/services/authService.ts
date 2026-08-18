@@ -58,7 +58,13 @@ export class ApiError extends Error {
  * sits on "Please wait" forever with nothing to tell the user. This turns
  * that into an error they can act on.
  */
-const REQUEST_TIMEOUT_MS = 15_000;
+/**
+ * 15s was enough when the API was a laptop on the same WiFi. The deployed
+ * API sleeps after 15 minutes idle and takes 30-60s to wake, so the first
+ * request of a session was aborting before the server had finished starting
+ * — reported to the user as if the server were unreachable.
+ */
+const REQUEST_TIMEOUT_MS = 60_000;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let response: Response;
@@ -80,8 +86,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new ApiError(
       'network_error',
       timedOut
-        ? `The server at ${API_BASE_URL} didn't respond. Check it's running, that you're on the same WiFi, and that your firewall allows it.`
-        : `Can't reach the server at ${API_BASE_URL}. Check it's running and that you're on the same WiFi.`,
+        ? `The server took too long to respond. It may be waking up after being idle — please try again in a moment.`
+        : `Can't reach the server. Check your internet connection and try again.`,
       0,
     );
   } finally {

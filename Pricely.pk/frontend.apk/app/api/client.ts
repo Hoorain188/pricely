@@ -36,9 +36,11 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  // Give up rather than hang forever on a dead network.
+  // Give up rather than hang forever on a dead network. 60s, not 15s: the
+  // deployed API sleeps when idle and needs 30-60s to wake, and a shorter
+  // limit turns that wait into a "server unreachable" error.
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), 60000);
 
   try {
     const res = await fetch(`${BASE}${path}`, {

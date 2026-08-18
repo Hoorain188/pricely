@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Pricely.Api.Authorization;
 using Pricely.Core.Dtos;
 using Pricely.Core.Entities;
 using Pricely.Infrastructure;
@@ -8,6 +10,7 @@ namespace Pricely.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/admin")]
+[Authorize(Policy = Policies.BackOffice)]
 public class ReportsController : ControllerBase
 {
     private readonly AppDbContext _db;

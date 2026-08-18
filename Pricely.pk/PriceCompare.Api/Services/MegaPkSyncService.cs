@@ -149,6 +149,13 @@ public class MegaPkSyncService
                 return;
             }
 
+            // Reuse the row the admin panel opened, so pressing Run does not
+            // leave a second one behind. Recurring runs open their own.
+            var run = await db.ScraperRuns
+                .Where(r => r.StoreId == megapk.Id && r.FinishedAt == null)
+                .OrderByDescending(r => r.StartedAt)
+                .FirstOrDefaultAsync();
+
             var http = _httpFactory.CreateClient();
             http.DefaultRequestHeaders.Add("User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -283,10 +290,40 @@ public class MegaPkSyncService
 
             _logger.LogInformation("Mega.pk FULL sync mukammal. Total {New} new, {Upd} updated.",
                 totalNew, totalUpdated);
+
+            // Close the run so the dashboard stops saying "running".
+            using (var cs = _services.CreateScope())
+            {
+                var cdb = cs.ServiceProvider.GetRequiredService<AppDbContext>();
+                var open = run is null ? null : await cdb.ScraperRuns.FirstOrDefaultAsync(r => r.Id == run.Id);
+                if (open is not null)
+                {
+                    open.FinishedAt = DateTime.UtcNow;
+                    await cdb.SaveChangesAsync();
+                }
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Mega.pk sync mein bara masla");
+
+            // A crashed run must still be closed, or the button stays disabled.
+            try
+            {
+                using var fs = _services.CreateScope();
+                var fdb = fs.ServiceProvider.GetRequiredService<AppDbContext>();
+                var stillOpen = await fdb.ScraperRuns
+                    .Where(r => r.FinishedAt == null)
+                    .OrderByDescending(r => r.StartedAt)
+                    .FirstOrDefaultAsync();
+                if (stillOpen is not null)
+                {
+                    stillOpen.ErrorMessage = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
+                    stillOpen.FinishedAt   = DateTime.UtcNow;
+                    await fdb.SaveChangesAsync();
+                }
+            }
+            catch (Exception ce) { _logger.LogError(ce, "Run row band nahi ho saki"); }
         }
     }
 

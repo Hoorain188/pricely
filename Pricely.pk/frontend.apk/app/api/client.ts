@@ -1,29 +1,31 @@
 /**
  * One place for the API base URL and every admin call.
  *
- * Set EXPO_PUBLIC_API_URL in .env at the project root:
- *   EXPO_PUBLIC_API_URL=http://192.168.10.8:5059/api/v1
+ * The origin comes from config/api.ts, which reuses the address Expo is
+ * already serving the bundle from — the laptop's address on this WiFi — so
+ * there is no IP to update when the network changes. Set EXPO_PUBLIC_API_URL
+ * to override it (a deployed URL, or a tunnel).
  *
- * It must be the laptop's LAN IP, not localhost — on a phone "localhost"
- * means the phone itself. Re-check it whenever you change WiFi.
+ * Note the /api/v1 suffix is added here. Auth calls sit at /api/auth and use
+ * the bare origin, so the two must not share a pre-suffixed variable.
  */
+import { API_BASE_URL } from '../../config/api';
 
-const BASE = (process.env.EXPO_PUBLIC_API_URL ?? '').trim().replace(/\/$/, '');
+const BASE = `${API_BASE_URL}/api/v1`;
 
 /**
- * Stands in for the signed-in admin until auth ships — it becomes the
- * X-Actor-Id header, which the server records as "who did this".
+ * The signed-in admin's access token. AuthContext keeps this in step on
+ * login, logout and startup, so every admin call carries proof of identity.
  *
- * IMPORTANT: this must be a real users.id from the database, otherwise the
- * server cannot attribute the action. Find yours with:
- *   SELECT id, name, role FROM users WHERE role <> 'user' ORDER BY id;
- *
- * Delete this whole block once the JWT carries the user id.
+ * This replaces a hardcoded X-Actor-Id header, which named the actor with a
+ * plain user id the client chose for itself — spoofable by anyone, and no
+ * longer accepted: the server now reads the "sub" claim off the verified
+ * token instead.
  */
-let actorId: string | null = '208';   // <-- set to YOUR users.id
+let authToken: string | null = null;
 
-export function setActorId(id: string | null) {
-  actorId = id;
+export function setApiAuthToken(token: string | null) {
+  authToken = token;
 }
 
 export class ApiError extends Error {
@@ -34,10 +36,6 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  if (!BASE) {
-    throw new ApiError(0, 'EXPO_PUBLIC_API_URL is not set. Add it to .env and restart Expo.');
-  }
-
   // Give up rather than hang forever on a dead network.
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -48,7 +46,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
-        ...(actorId ? { 'X-Actor-Id': actorId } : {}),
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         ...init.headers,
       },
     });
@@ -233,6 +231,10 @@ export interface ReportsResponse {
 // -------------------------------------------------------------- calls
 
 export const api = {
+  logSearch: (queryText: string) =>
+    request<void>('/searches', { method: 'POST', body: JSON.stringify({ queryText }) }),
+  logStoreClick: (url: string) =>
+    request<void>('/store-clicks', { method: 'POST', body: JSON.stringify({ url }) }),
   dashboard: () => request<DashboardResponse>('/admin/dashboard'),
 
   rerunScraper: (storeId: number) =>

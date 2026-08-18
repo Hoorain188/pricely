@@ -165,6 +165,11 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<IActivityLogger, ActivityLogger>();
 
+
+// ScrapersController posts to PriceCompare.Api to enqueue the real scrape job.
+// Base URL comes from config; falls back to the local dev port.
+//   dotnet user-secrets set "ScraperApi:BaseUrl" "http://localhost:5079"
+builder.Services.AddHttpClient();
 // Auth side
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<AuthService>();

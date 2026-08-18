@@ -20,6 +20,7 @@ import LottieBackButton from '../components/Lottiebackbutton';
 import { colors, fonts, radii, shadows, gradients } from '../theme/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import { searchProducts, SubcategoryProduct } from '../services/catalogService';
+import { api } from './api/client';
 import { loremflickrUri } from '../components/CategoryCarousel';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -69,15 +70,21 @@ export default function SearchScreen() {
     setLoading(true);
     setErrorMsg(null);
     const storeParam = selectedStore !== 'All' ? selectedStore : undefined;
-    searchProducts(searchTerm)
-      .then((res) => {
-        setResults(res);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setLoading(false);
-        setErrorMsg(err?.message || "Can't reach server — check connection");
-      });
+    // Wait for the typing to settle. Without this every keystroke fires a
+    // search and logs a row, so "iphone" lands as i, ip, iph, ipho, iphon.
+    const timer = setTimeout(() => {
+      api.logSearch(searchTerm).catch(() => {});
+      searchProducts(searchTerm)
+        .then((res) => {
+          setResults(res);
+          setLoading(false);
+        })
+        .catch((err) => {
+          setLoading(false);
+          setErrorMsg(err?.message || "Can't reach server — check connection");
+        });
+    }, 600);
+    return () => clearTimeout(timer);
   }, [query, selectedStore]);
 
   const filteredResults = results.filter((item) => {

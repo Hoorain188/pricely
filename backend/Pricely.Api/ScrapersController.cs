@@ -13,23 +13,49 @@ namespace Pricely.Api.Controllers;
 [Authorize(Policy = Policies.BackOfficeWrite)]
 public class ScrapersController : ControllerBase
 {
+    /// <summary>
+    /// An open run older than this is treated as abandoned rather than active.
+    /// Without it, one crashed run locks a store's button permanently, because
+    /// nothing in this service closes rows it did not finish itself.
+    /// </summary>
+    private static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// store slug -> sync endpoint on PriceCompare.Api. Keyed by slug, never by
+    /// id: the two databases number their stores differently.
+    /// </summary>
+    private static readonly Dictionary<string, string> SyncPaths =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["telemart"] = "/api/sync-telemart",
+            ["megapk"]   = "/api/sync-megapk",
+        };
+
     private readonly AppDbContext _db;
     private readonly IActivityLogger _log;
+    private readonly IHttpClientFactory _http;
+    private readonly IConfiguration _config;
 
-    public ScrapersController(AppDbContext db, IActivityLogger log)
+    public ScrapersController(
+        AppDbContext db,
+        IActivityLogger log,
+        IHttpClientFactory http,
+        IConfiguration config)
     {
-        _db  = db;
-        _log = log;
+        _db     = db;
+        _log    = log;
+        _http   = http;
+        _config = config;
     }
 
     /// <summary>
-    /// Ask for a scrape run. Opens a scraper_runs row with no finished_at,
-    /// which the dashboard reads as "running".
+    /// Trigger a scrape run. Opens a scraper_runs row, then asks PriceCompare.Api
+    /// to enqueue the Hangfire job that does the actual scraping.
     /// </summary>
     /// <remarks>
-    /// This only records the intent. Nothing scrapes yet — whoever builds the
-    /// scraper should pick up open runs (finished_at IS NULL) and complete
-    /// them, or replace this with a call into their job queue.
+    /// The scraper API queues the job and returns immediately, so a 202 here means
+    /// "accepted", not "finished". items_scraped stays 0 and finished_at stays null
+    /// until the sync services are changed to close their own run rows.
     /// </remarks>
     [HttpPost("{storeId:long}/run")]
     public async Task<IActionResult> Run(long storeId, CancellationToken ct)
@@ -37,12 +63,21 @@ public class ScrapersController : ControllerBase
         var store = await _db.Stores.FirstOrDefaultAsync(s => s.Id == storeId, ct);
         if (store is null) return NotFound();
 
+        if (!SyncPaths.TryGetValue(store.Slug, out var syncPath))
+            return BadRequest(new { title = $"No scraper is wired up for {store.Name}" });
+
+        var staleBefore = DateTimeOffset.UtcNow - StaleAfter;
         var alreadyRunning = await _db.ScraperRuns
-            .AnyAsync(r => r.StoreId == storeId && r.FinishedAt == null, ct);
+            .AnyAsync(r => r.StoreId == storeId
+                        && r.FinishedAt == null
+                        && r.StartedAt > staleBefore, ct);
 
         if (alreadyRunning)
             return Conflict(new { title = $"A {store.Name} run is already in progress" });
 
+        // This opens the row; the scraper closes it when the job finishes.
+        // It has to happen here because PriceCompare.Api's ScraperRun model has
+        // no Status field, and the column is NOT NULL with no default.
         var run = new ScraperRun
         {
             StoreId      = storeId,
@@ -55,6 +90,27 @@ public class ScrapersController : ControllerBase
         _db.ScraperRuns.Add(run);
         _log.Record("scraper.rerun", "store", storeId, new { storeName = store.Name });
         await _db.SaveChangesAsync(ct);
+
+        var baseUrl = _config["ScraperApi:BaseUrl"] ?? "http://localhost:5079";
+
+        try
+        {
+            var client = _http.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+
+            var resp = await client.PostAsync($"{baseUrl}{syncPath}", null, ct);
+            resp.EnsureSuccessStatusCode();
+        }
+        catch (Exception ex)
+        {
+            // Close the run as failed, otherwise it sits open for 15 minutes and
+            // blocks retries while the scraper API is down.
+            return StatusCode(502, new
+            {
+                title  = "The scraper API did not accept the job",
+                detail = ex.Message
+            });
+        }
 
         return Accepted(new { jobId = run.Id, store = store.Name });
     }

@@ -231,6 +231,10 @@ export interface ReportsResponse {
 // -------------------------------------------------------------- calls
 
 export const api = {
+  logSearch: (queryText: string) =>
+    request<void>('/searches', { method: 'POST', body: JSON.stringify({ queryText }) }),
+  logStoreClick: (url: string) =>
+    request<void>('/store-clicks', { method: 'POST', body: JSON.stringify({ url }) }),
   dashboard: () => request<DashboardResponse>('/admin/dashboard'),
 
   rerunScraper: (storeId: number) =>

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
-import { LucideIcon, Shield, User, Lock } from 'lucide-react-native';
+import * as Device from 'expo-device';
+import { LucideIcon, Shield, User, Lock, ArrowLeft } from 'lucide-react-native';
 import LoginForm, { LoginFormRef } from './LoginForm';
 import SignupForm, { SignupFormRef } from './SignupForm';
 import ForgotPasswordForm, { ForgotPasswordFormRef } from './ForgotPasswordForm';
@@ -10,6 +11,7 @@ import FloatingLabelInput from '../components/FloatingLabelInput';
 import GradientButton from '../components/GradientButton';
 import { colors, radii, fonts } from '../theme/colors';
 import { useAuthStore } from '../context/AuthContext';
+import * as authService from '../services/authService';
 
 interface AuthScreenProps {
   navigation?: any;
@@ -17,8 +19,8 @@ interface AuthScreenProps {
   onAuthenticated?: () => void;
 }
 
-type Role = 'admin' | 'user';
-type Mode = 'login' | 'signup' | 'forgot' | 'verify' | 'resetPassword';
+type Role = 'admin' | 'user' | 'support' | 'readonly';
+type Mode = 'login' | 'signup' | 'forgot' | 'verify' | 'resetPassword' | 'pendingApproval' | 'signupBlocked';
 
 const ROLES: { key: Role; title: string; subtitle: string; icon: LucideIcon }[] = [
   { key: 'admin', title: 'ADMIN', subtitle: 'Manage store data', icon: Shield },
@@ -29,7 +31,11 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const [mode, setMode] = useState<Mode>('login');
   const [role, setRole] = useState<Role>('user');
   const [verifyEmail, setVerifyEmail] = useState('');
-  const [pendingUser, setPendingUser] = useState<{ name: string; email: string } | null>(null);
+  // The reset flow needs the code again when the new password is submitted:
+  // verify-reset-code deliberately checks it without spending it, so the
+  // server can re-check and consume it at the actual reset.
+  const [verifyCode, setVerifyCode] = useState('');
+  const [blockedReason, setBlockedReason] = useState<string | undefined>();
   const [resetPassword, setResetPassword] = useState('');
   const [resetConfirmPassword, setResetConfirmPassword] = useState('');
   const [resetError, setResetError] = useState<string | undefined>();
@@ -65,7 +71,8 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   };
 
   useEffect(() => {
-    const t = setTimeout(() => refFor(mode)?.current?.playIn(), 30);
+    const activeRef = refFor(mode);
+    const t = setTimeout(() => activeRef?.current?.playIn(), 30);
     return () => clearTimeout(t);
   }, [mode]);
 
@@ -119,9 +126,10 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               ref={signupRef}
               role={role}
               onSwitchToLogin={() => goTo('login')}
-              onSignedUp={(email, name) => {
+              onSignedUp={(email) => {
+                // SignupForm has already created the account on the server and
+                // triggered the emailed code; nothing is held here.
                 setVerifyEmail(email);
-                setPendingUser({ name, email });
                 setVerifyFlow('signup');
                 goTo('verify');
               }}
@@ -144,24 +152,83 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               ref={verifyRef}
               email={verifyEmail}
               onBack={() => goTo(verifyFlow === 'signup' ? 'signup' : 'forgot')}
-              onVerified={async () => {
+              onVerified={async (code: string) => {
                 if (verifyFlow === 'signup') {
-                  if (pendingUser) {
-                    await setAuth({ id: '1', name: pendingUser.name, email: pendingUser.email }, 'mock-jwt-token');
+                  const result = await authService.verifySignup({
+                    email: verifyEmail,
+                    code,
+                    deviceName: `${Device.deviceName ?? Platform.OS} (${Platform.OS})`,
+                  });
+
+                  // Shoppers come back signed in. Back-office signups come back
+                  // with status 'pending_approval' and no tokens, so which shape
+                  // arrived decides where to go — never assume.
+                  if (authService.isAuthResponse(result)) {
+                    await setAuth(result.user, result.accessToken, result.refreshToken);
+                    onAuthenticated?.();
+                    return;
                   }
-                  onAuthenticated?.();
-                } else {
-                  goTo('resetPassword');
+                  goTo('pendingApproval');
+                  return;
                 }
+
+                // Reset flow: this only checks the code. It is spent later,
+                // when the new password is actually submitted.
+                await authService.verifyResetCode({ email: verifyEmail, code });
+                setVerifyCode(code);
+                goTo('resetPassword');
               }}
               onResend={async () => {
-                await new Promise<void>((resolve) => setTimeout(resolve, 250));
+                await authService.resendCode({
+                  email: verifyEmail,
+                  purpose: verifyFlow === 'signup' ? 'Signup' : 'PasswordReset',
+                });
               }}
             />
           )}
+          {mode === 'pendingApproval' && (
+            <View style={styles.resetPasswordCard}>
+              <Text style={[styles.heading, styles.centeredText]}>Request submitted</Text>
+              <Text style={styles.subtext}>
+                Your admin access request has been sent to the Pricely team. You'll be able to sign in once an
+                existing admin approves it.
+              </Text>
+              <GradientButton
+                label="Back to sign in"
+                onPress={() => goTo('login')}
+                style={styles.resetPasswordAction}
+              />
+            </View>
+          )}
+          {mode === 'signupBlocked' && (
+            <View style={styles.resetPasswordCard}>
+              <Text style={[styles.heading, styles.centeredText]}>Couldn't submit request</Text>
+              <Text style={styles.subtext}>{blockedReason}</Text>
+              <GradientButton
+                label="Back to sign in"
+                onPress={() => {
+                  setBlockedReason(undefined);
+                  goTo('login');
+                }}
+                style={styles.resetPasswordAction}
+              />
+            </View>
+          )}
           {mode === 'resetPassword' && (
             <View style={styles.resetPasswordCard}>
-              <Text style={styles.heading}>Set a new password</Text>
+              <TouchableOpacity
+                style={styles.backBtn}
+                onPress={() => {
+                  setResetPassword('');
+                  setResetConfirmPassword('');
+                  setResetError(undefined);
+                  goTo('login');
+                }}
+                activeOpacity={0.75}
+              >
+                <ArrowLeft size={20} color={colors.textPrimary} />
+              </TouchableOpacity>
+              <Text style={[styles.heading, styles.centeredText]}>Set a new password</Text>
               <Text style={styles.subtext}>Your code was verified. Choose a new password and sign back in.</Text>
               <FloatingLabelInput
                 label="New password"
@@ -203,12 +270,24 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
                   setResetError(undefined);
                   setResetLoading(true);
                   try {
-                    await new Promise<void>((resolve) => setTimeout(resolve, 250));
+                    // The code is sent again here — this is the call that
+                    // actually spends it, and the server re-checks it rather
+                    // than trusting that the earlier screen was passed.
+                    await authService.resetPassword({
+                      email: verifyEmail,
+                      code: verifyCode,
+                      newPassword: resetPassword.trim(),
+                    });
                     setResetPassword('');
                     setResetConfirmPassword('');
+                    setVerifyCode('');
                     goTo('login');
-                  } catch {
-                    setResetError('Unable to reset password. Please try again.');
+                  } catch (error) {
+                    setResetError(
+                      error instanceof authService.ApiError
+                        ? error.message
+                        : 'Unable to reset password. Please try again.',
+                    );
                   } finally {
                     setResetLoading(false);
                   }
@@ -260,8 +339,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    alignItems: 'center',
   },
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.medium,
+    backgroundColor: colors.accentTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  centeredText: { textAlign: 'center' },
   heading: { fontSize: 28, fontFamily: fonts.headline, color: colors.textPrimary, marginBottom: 8 },
   subtext: { fontSize: 15, fontFamily: fonts.body, color: colors.textSecondary, lineHeight: 21, marginBottom: 20, textAlign: 'center' },
   link: { color: colors.accentSolid, fontFamily: fonts.button, fontSize: 13 },

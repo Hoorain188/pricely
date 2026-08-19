@@ -14,6 +14,7 @@ import {
 import { ArrowLeft } from 'lucide-react-native';
 import GradientButton from '../components/GradientButton';
 import { colors, fonts, radii } from '../theme/colors';
+import { ApiError } from '../services/authService';
 
 const STEPS = 4;
 const CODE_LENGTH = 6;
@@ -134,13 +135,14 @@ const VerifyCodeForm = forwardRef<VerifyCodeFormRef, VerifyCodeFormProps>(functi
     setError(undefined);
     setLoading(true);
     try {
-      const isValid = await Promise.resolve({ ok: true, valid: true });
-      if (!isValid.ok || !isValid.valid) {
-        throw new Error('Invalid or expired code');
-      }
       await onVerified(codeValue);
-    } catch {
-      setError('Unable to verify code. Please try again.');
+    } catch (err) {
+      // Show what the server actually said. It counts down remaining
+      // attempts and reports expiry, and a generic message here would
+      // hide both — leaving people retyping a code that can never work.
+      setError(
+        err instanceof ApiError ? err.message : 'Unable to verify code. Please try again.',
+      );
     } finally {
       setLoading(false);
     }
@@ -152,8 +154,10 @@ const VerifyCodeForm = forwardRef<VerifyCodeFormRef, VerifyCodeFormProps>(functi
       setDigits(Array(CODE_LENGTH).fill(''));
       setError(undefined);
       setSecondsLeft(expiresInSeconds);
-    } catch {
-      setError('Unable to resend code. Please try again.');
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : 'Unable to resend code. Please try again.',
+      );
     }
   };
 

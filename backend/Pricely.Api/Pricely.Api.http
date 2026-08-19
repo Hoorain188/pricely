@@ -1,0 +1,187 @@
+@host = http://localhost:5099
+
+### Health check
+GET {{host}}/health
+
+### 1. Sign up as a shopper
+# Reply is {"status":"verification_sent"}. With Gmail unset, the code is
+# printed in the API console instead of emailed.
+POST {{host}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "name": "Test Shopper",
+  "email": "shopper@example.com",
+  "password": "TestPass123!",
+  "portal": "user"
+}
+
+### 2. Confirm the code (returns tokens — shopper is logged in)
+POST {{host}}/api/auth/verify-signup
+Content-Type: application/json
+
+{
+  "email": "shopper@example.com",
+  "code": "000000",
+  "deviceName": "iPhone 15"
+}
+
+### 3. Log in
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "shopper@example.com",
+  "password": "TestPass123!",
+  "portal": "user",
+  "deviceName": "iPhone 15"
+}
+
+### 3b. Same shopper via the ADMIN tab — must be rejected
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "shopper@example.com",
+  "password": "TestPass123!",
+  "portal": "admin"
+}
+
+### 4. Sign up through the ADMIN tab — goes to the approval queue, no login
+POST {{host}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "name": "Test Admin",
+  "email": "admin@example.com",
+  "password": "AdminPass123!",
+  "portal": "admin"
+}
+
+### 5. Forgot password
+POST {{host}}/api/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "shopper@example.com"
+}
+
+### 6. Check the reset code (doesn't spend it)
+POST {{host}}/api/auth/verify-reset-code
+Content-Type: application/json
+
+{
+  "email": "shopper@example.com",
+  "code": "000000"
+}
+
+### 7. Set the new password (spends the code, logs out every device)
+POST {{host}}/api/auth/reset-password
+Content-Type: application/json
+
+{
+  "email": "shopper@example.com",
+  "code": "000000",
+  "newPassword": "BrandNewPass456!"
+}
+
+### 8. Current user — paste an accessToken below
+@token = paste-access-token-here
+
+GET {{host}}/api/auth/me
+Authorization: Bearer {{token}}
+
+### 9. Logged-in devices
+GET {{host}}/api/auth/sessions
+Authorization: Bearer {{token}}
+
+### 10. Swap a refresh token for a fresh access token (rotates it)
+POST {{host}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "paste-refresh-token-here"
+}
+
+### ─────────────────────────────────────────────────────────────
+### TEAM MANAGEMENT — needs an ADMIN token
+### ─────────────────────────────────────────────────────────────
+@adminToken = paste-admin-access-token-here
+
+### List team members (Admin + Support)
+GET {{host}}/api/v1/admin/team/members
+Authorization: Bearer {{adminToken}}
+
+### Pending requests (Admin + Support)
+GET {{host}}/api/v1/admin/team/requests
+Authorization: Bearer {{adminToken}}
+
+### Who did what (Admin + Support)
+GET {{host}}/api/v1/admin/team/activity?limit=20
+Authorization: Bearer {{adminToken}}
+
+### Approve a pending request — Admin only
+POST {{host}}/api/v1/admin/team/requests/1/approve
+Authorization: Bearer {{adminToken}}
+
+### Reject a pending request — Admin only
+POST {{host}}/api/v1/admin/team/requests/1/reject
+Authorization: Bearer {{adminToken}}
+
+### Invite someone onto the team — Admin only
+POST {{host}}/api/v1/admin/team/invites
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "email": "newcolleague@example.com",
+  "role": "Support"
+}
+
+### Cancel an invite — Admin only
+DELETE {{host}}/api/v1/admin/team/invites/1
+Authorization: Bearer {{adminToken}}
+
+### Change someone's role — Admin only
+PATCH {{host}}/api/v1/admin/team/members/2/role
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "role": "ReadOnly"
+}
+
+### Remove someone from the team — Admin only
+DELETE {{host}}/api/v1/admin/team/members/2
+Authorization: Bearer {{adminToken}}
+
+### Accept an invite (public — the invited person calls this)
+POST {{host}}/api/auth/accept-invite
+Content-Type: application/json
+
+{
+  "token": "paste-invite-token-from-the-email",
+  "name": "New Colleague",
+  "password": "TheirPassword123!"
+}
+
+### Resend a code (the verify screen's "Resend" button)
+POST {{host}}/api/auth/resend-code
+Content-Type: application/json
+
+{
+  "email": "shopper@example.com",
+  "purpose": "Signup"
+}
+
+
+### ─────────────────────────────────────────────
+### ADMIN API (from the admin backend)
+### ─────────────────────────────────────────────
+
+@Pricely.Api_HostAddress = http://localhost:5059
+
+GET {{Pricely.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

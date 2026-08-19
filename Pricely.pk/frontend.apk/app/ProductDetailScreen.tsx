@@ -19,6 +19,7 @@ import { ExternalLink, Tag } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { colors, fonts, radii, shadows, gradients } from '../theme/colors';
 import { LinearGradient } from 'expo-linear-gradient';
+import { api } from './api/client';
 import { useUserStore } from '../context/UserStore';
 import LottieLoader from '../components/Lottieloader';
 import LottieBackButton from '../components/Lottiebackbutton';
@@ -115,6 +116,7 @@ export default function ProductDetailScreen() {
         const parsed = new URL(fullUrl);
         if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
           Linking.openURL(parsed.href).catch((err) => console.warn('Could not open store URL', err));
+          api.logStoreClick(parsed.href).catch(() => {});
         }
       } catch {
         // Invalid URL format

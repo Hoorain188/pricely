@@ -64,7 +64,9 @@ export default function ProfileScreen() {
   const [editEmail, setEditEmail] = useState(user?.email || 'sattisamad0@gmail.com');
   const [editPhone, setEditPhone] = useState(user?.phone || '03460524355');
   const [editLocation, setEditLocation] = useState(user?.location || 'Rawalpindi, Pakistan');
-  const [editPassword, setEditPassword] = useState(user?.password || '••••••••');
+  // Never seeded from the stored user: the password isn't kept on the device
+  // any more, and changing it needs a real endpoint (see backend/README.md).
+  const [editPassword, setEditPassword] = useState('••••••••');
   const [selectedAvatar, setSelectedAvatar] = useState(user?.avatar || '');
 
   const initials = user?.name 
@@ -82,7 +84,7 @@ export default function ProfileScreen() {
       setEditEmail(email);
       setEditPhone(phone);
       setEditLocation(location);
-      setEditPassword(user?.password || '••••••••');
+      setEditPassword('••••••••');
       setSelectedAvatar(user?.avatar || '');
       setEditModalVisible(true);
     }
@@ -109,14 +111,14 @@ export default function ProfileScreen() {
 
     try {
       await setAuth(
-        { 
-          id: user?.id || '1', 
-          name: editName, 
-          email: editEmail, 
+        {
+          id: user?.id || '1',
+          name: editName,
+          email: editEmail,
+          role: user?.role || 'user',
           phone: editPhone,
           location: editLocation,
-          password: editPassword !== '••••••••' ? editPassword : user?.password,
-          avatar: selectedAvatar 
+          avatar: selectedAvatar
         },
         token || 'mock-jwt-token'
       );
@@ -175,7 +177,7 @@ export default function ProfileScreen() {
                   setEditEmail(email);
                   setEditPhone(phone);
                   setEditLocation(location);
-                  setEditPassword(user?.password || '••••••••');
+                  setEditPassword('••••••••');
                   setSelectedAvatar(user?.avatar || '');
                   setEditModalVisible(true);
                 }}

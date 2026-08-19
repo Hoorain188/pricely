@@ -4,6 +4,7 @@ import { Mail, ArrowLeft } from 'lucide-react-native';
 import FloatingLabelInput from '../components/FloatingLabelInput';
 import GradientButton from '../components/GradientButton';
 import { colors, fonts, radii } from '../theme/colors';
+import * as authService from '../services/authService';
 
 const STEPS = 4;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -69,8 +70,15 @@ const ForgotPasswordForm = forwardRef<ForgotPasswordFormRef, ForgotPasswordFormP
     setError(undefined);
     setLoading(true);
     try {
-      // TODO: call your reset-code API here
+      await authService.forgotPassword(email.trim());
+      // Always advances, even for an unknown email: the server deliberately
+      // reports success either way so this screen can't be used to discover
+      // which addresses have accounts.
       onCodeSent(email.trim());
+    } catch (err) {
+      setError(
+        err instanceof authService.ApiError ? err.message : 'Could not send the code. Please try again.',
+      );
     } finally {
       setLoading(false);
     }

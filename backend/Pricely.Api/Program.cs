@@ -132,24 +132,33 @@ builder.Services.AddRateLimiter(options =>
     };
 
     // Sign-in and code entry: the brute-force targets.
+    //
+    // The budget is per IP, and on a mobile network thousands of phones sit
+    // behind one address — so a limit tight enough to matter to an attacker
+    // locks out ordinary users who share it. The real defence against code
+    // guessing is elsewhere and does not depend on this: a code dies after
+    // five wrong attempts (VerificationCode.MaxAttempts) and expires on its
+    // own, so guessing is bounded per code no matter how many requests arrive.
     options.AddPolicy(RateLimitPolicies.Sensitive, http =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: ClientKey(http),
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 10,
+                PermitLimit = 60,
                 Window = TimeSpan.FromMinutes(5),
                 QueueLimit = 0
             }));
 
-    // Anything that sends an email — stops the API being used as a spam relay
+    // Anything that sends an email. Loose enough that nobody hits it retrying
+    // a signup — checking spam, asking for another code, correcting a typo —
+    // and still low enough that the API cannot be turned into a bulk relay
     // against someone else's inbox.
     options.AddPolicy(RateLimitPolicies.EmailSending, http =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: ClientKey(http),
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 5,
+                PermitLimit = 30,
                 Window = TimeSpan.FromMinutes(15),
                 QueueLimit = 0
             }));

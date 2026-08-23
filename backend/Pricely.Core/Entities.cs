@@ -265,6 +265,39 @@ public class UserNotificationSettings
     public bool WeeklySummaryEmail { get; set; }
 }
 
+/// <summary>
+/// A signup that has been started but not yet confirmed by email.
+///
+/// Signup used to insert straight into users with email_verified_at null. If
+/// the code never arrived — spam folder, mail provider trouble, a typo in the
+/// address — the row stayed forever: login refused it as unverified, and
+/// signing up again refused it as taken, with no way out from inside the app.
+///
+/// Nothing lands in users now until a code is confirmed, so an abandoned
+/// signup leaves only a row here, which expires and is cleared.
+/// Added by db/006_pending_signups.sql.
+/// </summary>
+public class PendingSignup
+{
+    public long Id { get; set; }
+    public string Email { get; set; } = "";
+    public string Name { get; set; } = "";
+
+    /// <summary>Already hashed. A plain password is never stored, even here.</summary>
+    public string PasswordHash { get; set; } = "";
+
+    public UserRole Role { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+
+    /// <summary>
+    /// Long enough to find the mail, check spam, and ask for a resend or two;
+    /// short enough that an address is not held hostage by someone who typed
+    /// it by mistake.
+    /// </summary>
+    public static readonly TimeSpan Lifetime = TimeSpan.FromHours(24);
+}
+
 public class VerificationCode
 {
     public long Id { get; set; }

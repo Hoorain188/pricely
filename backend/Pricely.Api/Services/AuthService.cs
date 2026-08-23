@@ -42,24 +42,38 @@ public class AuthService
     {
         var email = Normalize(req.Email);
 
-        if (await _db.Users.AnyAsync(u => u.Email == email, ct))
+        // Only a *confirmed* account blocks the address. An unverified row is
+        // a signup that never finished — from before signups were held back
+        // until verification — and refusing it is what left those addresses
+        // with no way forward: login called them unverified, signup called
+        // them taken. Verifying promotes that same row (see VerifySignupAsync).
+        var existing = await _db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+        if (existing is not null && existing.EmailVerifiedAt is not null)
             throw new AuthException("email_taken", "An account with this email already exists — try signing in instead.");
 
         // The ADMIN tab only ever *requests* Admin. Support and Read-only are
         // assigned by an existing admin later; nobody can pick them at signup.
         var role = req.Portal == Portal.Admin ? UserRole.Admin : UserRole.User;
 
-        var user = new User
-        {
-            Name = req.Name.Trim(),
-            Email = email,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
-            Role = role,
-            IsActive = false,          // flipped on once the email code is confirmed
-            EmailVerifiedAt = null
-        };
+        // Held here, not in users, until the code comes back. An account that
+        // is never confirmed then leaves nothing behind that can block the
+        // address — see PendingSignup.
+        var pending = await _db.PendingSignups.FirstOrDefaultAsync(p => p.Email == email, ct);
 
-        _db.Users.Add(user);
+        if (pending is null)
+        {
+            pending = new PendingSignup { Email = email };
+            _db.PendingSignups.Add(pending);
+        }
+
+        // Starting over replaces the previous attempt, so a corrected name or
+        // password takes effect instead of the abandoned one being confirmed.
+        pending.Name = req.Name.Trim();
+        pending.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password);
+        pending.Role = role;
+        pending.CreatedAt = DateTimeOffset.UtcNow;
+        pending.ExpiresAt = DateTimeOffset.UtcNow + PendingSignup.Lifetime;
+
         await _db.SaveChangesAsync(ct);
 
         await IssueCodeAsync(email, VerificationPurpose.Signup, ct);
@@ -75,13 +89,49 @@ public class AuthService
     {
         var email = Normalize(req.Email);
 
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == email, ct)
+        var pending = await _db.PendingSignups.FirstOrDefaultAsync(p => p.Email == email, ct)
             ?? throw new AuthException("not_found", "No account is waiting on verification for that email.", StatusCodes.Status404NotFound);
 
+        if (pending.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            _db.PendingSignups.Remove(pending);
+            await _db.SaveChangesAsync(ct);
+            throw new AuthException("expired", "This signup has expired. Please sign up again.");
+        }
+
+        // Throws if the code is wrong, stale or spent — so nothing below runs
+        // and the account is only created for a proven address.
         await ConsumeCodeAsync(email, req.Code, VerificationPurpose.Signup, ct);
 
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+
+        if (user is null)
+        {
+            user = new User
+            {
+                Email = pending.Email,
+                IsActive = false        // shoppers are switched on just below
+            };
+            _db.Users.Add(user);
+        }
+        else if (user.EmailVerifiedAt is not null)
+        {
+            // Registered by someone else between starting and confirming.
+            _db.PendingSignups.Remove(pending);
+            await _db.SaveChangesAsync(ct);
+            throw new AuthException("email_taken", "An account with this email already exists — try signing in instead.");
+        }
+        // Otherwise it is a never-verified row from the old flow: reuse it, so
+        // its id keeps working for whatever already references it.
+
+        user.Name = pending.Name;
+        user.PasswordHash = pending.PasswordHash;
+        user.Role = pending.Role;
         user.EmailVerifiedAt = DateTimeOffset.UtcNow;
         user.UpdatedAt = DateTimeOffset.UtcNow;
+
+        _db.PendingSignups.Remove(pending);
+        await _db.SaveChangesAsync(ct);
 
         // Shoppers are in immediately. Back-office signups are not: they go to
         // the pending queue an existing admin reviews, and stay inactive until
@@ -193,12 +243,13 @@ public class AuthService
             ? VerificationPurpose.Signup
             : VerificationPurpose.PasswordReset;
 
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
-
-        // A signup code is pointless once the address is already confirmed,
-        // so that case is skipped rather than mailing a code nobody needs.
-        var worthSending = user is not null &&
-            (purpose == VerificationPurpose.PasswordReset || user.EmailVerifiedAt is null);
+        // A signup code belongs to a pending signup, not to a user — an
+        // unconfirmed account no longer exists in users at all. A reset code
+        // is the other way round: only a real account can have one.
+        var worthSending = purpose == VerificationPurpose.PasswordReset
+            ? await _db.Users.AnyAsync(u => u.Email == email, ct)
+            : await _db.PendingSignups.AnyAsync(
+                  p => p.Email == email && p.ExpiresAt > DateTimeOffset.UtcNow, ct);
 
         if (worthSending)
             await IssueCodeAsync(email, purpose, ct);

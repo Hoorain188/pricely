@@ -31,6 +31,7 @@ public class AppDbContext : DbContext
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<UserNotificationSettings> UserNotificationSettings => Set<UserNotificationSettings>();
     public DbSet<VerificationCode> VerificationCodes => Set<VerificationCode>();
+    public DbSet<PendingSignup> PendingSignups => Set<PendingSignup>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {

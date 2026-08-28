@@ -1,13 +1,14 @@
 using AngleSharp;
 using AngleSharp.Dom;
 using Microsoft.EntityFrameworkCore;
-using PriceCompare.Api.Data;
-using PriceCompare.Api.Models;
+using Pricely.Core.Entities;
+using Pricely.Infrastructure;
 
-namespace PriceCompare.Api.Services;
+namespace Pricely.Api.Services;
 
-public class MegaPkSyncService
+public class MegaPkSyncService : IStoreConnector
 {
+    public string StoreName => "Mega.pk";
     private readonly IHttpClientFactory _httpFactory;
     private readonly IServiceProvider _services;
     private readonly ILogger<MegaPkSyncService> _logger;
@@ -223,29 +224,31 @@ public class MegaPkSyncService
 
                     // --- BATCHED UPSERT (ek query se sab existing laayein, per-item nahi) ---
                     var urls = fresh.Select(f => f.Url).ToList();
-                    var existingMap = await RetryAsync(() => db.StoreListings
-                        .Where(l => l.StoreId == megapk.Id && urls.Contains(l.ProductUrl))
+                    var existingMap = await RetryAsync<Dictionary<string, StoreListing>>(async () => await db.StoreListings
+                        .Where(l => l.StoreId == megapk.Id && l.ProductUrl != null && urls.Contains(l.ProductUrl!))
                         .ToDictionaryAsync(l => l.ProductUrl!)) ?? new Dictionary<string, StoreListing>();
 
                     foreach (var item in fresh)
                     {
+                        var mappedCategory = CategoryMapper.Map(item.Name, null, category);
+
                         if (existingMap.TryGetValue(item.Url, out var existing))
                         {
                             if (item.Price > 0 && existing.Price != item.Price)
                             {
-                                db.PriceHistories.Add(new PriceHistory
+                                db.PriceHistory.Add(new PriceHistoryPoint
                                 {
                                     StoreListingId = existing.Id,
                                     Price          = existing.Price,
-                                    RecordedAt     = DateTime.UtcNow
+                                    RecordedAt     = DateTimeOffset.UtcNow
                                 });
                                 existing.Price = item.Price;
                             }
                             existing.RawTitle  = Trim500(item.Name);
                             existing.ImageUrl  = item.Image;
-                            existing.Category  = category;
+                            existing.Category  = mappedCategory;
                             existing.InStock   = item.Price > 0;
-                            existing.ScrapedAt = DateTime.UtcNow;
+                            existing.ScrapedAt = DateTimeOffset.UtcNow;
                             catUpdated++; totalUpdated++;
                         }
                         else
@@ -258,8 +261,8 @@ public class MegaPkSyncService
                                 InStock    = item.Price > 0,
                                 ProductUrl = item.Url,
                                 ImageUrl   = item.Image,
-                                Category   = category,
-                                ScrapedAt  = DateTime.UtcNow
+                                Category   = mappedCategory,
+                                ScrapedAt  = DateTimeOffset.UtcNow
                             });
                             catNew++; totalNew++;
                         }
@@ -298,7 +301,7 @@ public class MegaPkSyncService
                 var open = run is null ? null : await cdb.ScraperRuns.FirstOrDefaultAsync(r => r.Id == run.Id);
                 if (open is not null)
                 {
-                    open.FinishedAt = DateTime.UtcNow;
+                    open.FinishedAt = DateTimeOffset.UtcNow;
                     await cdb.SaveChangesAsync();
                 }
             }
@@ -319,7 +322,7 @@ public class MegaPkSyncService
                 if (stillOpen is not null)
                 {
                     stillOpen.ErrorMessage = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
-                    stillOpen.FinishedAt   = DateTime.UtcNow;
+                    stillOpen.FinishedAt   = DateTimeOffset.UtcNow;
                     await fdb.SaveChangesAsync();
                 }
             }

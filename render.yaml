@@ -1,17 +1,15 @@
-# Render Blueprint — both Pricely APIs.
+# Render Blueprint — unified Pricely API.
 #
-# The database is not defined here: it already lives on Neon, and both
-# services connect to that same instance, exactly as they do locally.
+# The database is not defined here: it already lives on Neon.
 #
 # Every value marked `sync: false` is a secret. Render prompts for it when
 # the blueprint is created and stores it on the service — it is never
 # committed here. Copy the values out of user-secrets with:
 #
-#   cd backend/Pricely.Api          && dotnet user-secrets list
-#   cd Pricely.pk/PriceCompare.Api  && dotnet user-secrets list
+#   cd backend/Pricely.Api && dotnet user-secrets list
 
 services:
-  # ── Auth + admin back office ────────────────────────────────────────────
+  # ── Unified API: auth, admin, scrapers, browse/search ───────────────────
   - type: web
     name: pricely-api
     runtime: docker
@@ -25,6 +23,9 @@ services:
       # is the same key as ConnectionStrings:Default in user-secrets.
       - key: ConnectionStrings__Default
         sync: false
+      # Scrapers also look for this key (legacy from PriceCompare.Api)
+      - key: ConnectionStrings__DefaultConnection
+        sync: false
       - key: Jwt__SigningKey
         sync: false
       # Program.cs refuses to start outside Development without these —
@@ -34,15 +35,3 @@ services:
       - key: Email__SmtpPassword
         sync: false
 
-  # ── Customer-facing browse/search + scrapers ────────────────────────────
-  - type: web
-    name: pricely-scraper
-    runtime: docker
-    plan: free
-    region: oregon
-    dockerfilePath: ./Pricely.pk/PriceCompare.Api/Dockerfile
-    dockerContext: ./Pricely.pk/PriceCompare.Api
-    healthCheckPath: /api/db-test
-    envVars:
-      - key: ConnectionStrings__DefaultConnection
-        sync: false

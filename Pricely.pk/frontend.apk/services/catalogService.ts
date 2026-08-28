@@ -7,6 +7,7 @@ export interface Category {
 
 export interface Deal {
   id: string;
+  idNum?: number;
   name: string;
   price: string;
   discount: string;
@@ -18,6 +19,7 @@ export interface Deal {
 }
 
 export interface SubcategoryProduct {
+  id?: number;
   name: string;
   price: string;
   pictureTag?: string;
@@ -26,6 +28,7 @@ export interface SubcategoryProduct {
   url?: string;
   store?: string;
   currency?: string;
+  hasComparison?: boolean;
 }
 
 export interface Subcategory {
@@ -97,6 +100,7 @@ export async function getBestDrops(): Promise<Deal[]> {
     if (apiResults && apiResults.length > 0) {
       return apiResults.slice(0, 8).map((item, idx) => ({
         id: item.handle || String(idx),
+        idNum: item.id,
         name: item.title,
         price: formatPrice(item.price),
         discount: 'HOT',
@@ -139,6 +143,7 @@ export async function searchProducts(query: string, store?: string): Promise<Sub
     const apiResults = await fetchSearchProducts(q, store);
     if (apiResults && apiResults.length > 0) {
       return apiResults.map((item) => ({
+        id: item.id,
         name: item.title,
         price: formatPrice(item.price),
         pictureTag: item.title,

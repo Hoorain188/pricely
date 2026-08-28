@@ -1,12 +1,13 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using PriceCompare.Api.Data;
-using PriceCompare.Api.Models;
+using Pricely.Core.Entities;
+using Pricely.Infrastructure;
 
-namespace PriceCompare.Api.Services;
+namespace Pricely.Api.Services;
 
-public class TelemartSyncService
+public class TelemartSyncService : IStoreConnector
 {
+    public string StoreName => "Telemart";
     private readonly IHttpClientFactory _httpFactory;
     private readonly IServiceProvider _services;
     private readonly ILogger<TelemartSyncService> _logger;
@@ -21,115 +22,7 @@ public class TelemartSyncService
         _logger = logger;
     }
 
-    // 10 categories: mobiles_tablets, laptops_computers, tv_entertainment,
-    // home_appliances, kitchen_appliances, cameras, audio, wearables, gaming, accessories
-    private static string MapCategory(string? productType, string title, List<string> tags)
-    {
-        var pt = (productType ?? "").ToLower();
-        var t  = (pt + " " + title + " " + string.Join(" ", tags)).ToLower();
 
-        // ---- Skip karne wali cheezein (medicine, beauty, fashion, hassaas) ----
-        if (t.Contains("viga") || t.Contains("sildenafil") || t.Contains("long time spray") ||
-            t.Contains("timing spray") || t.Contains("delay spray") || t.Contains("condom") ||
-            t.Contains("erection") || t.Contains("libido") ||
-            (t.Contains("tablet") && (t.Contains("mg") || t.Contains(" tablets)") ||
-                t.Contains("30 tablets") || t.Contains("20 tablets") || t.Contains("15 tablets"))) ||
-            t.Contains("capsules") || t.Contains("syrup") || t.Contains("multivitamin") ||
-            t.Contains("supplement") || t.Contains("herbiotics") || t.Contains("nutrifactor") ||
-            t.Contains("health aid") || t.Contains("ointment") || t.Contains("medicine") ||
-            t.Contains("protein powder") || t.Contains("whey") || t.Contains("fish oil") ||
-            t.Contains("perfume") || t.Contains("fragrance") || t.Contains("body mist") ||
-            t.Contains("lipstick") || t.Contains("mascara") || t.Contains("foundation") ||
-            t.Contains("makeup") || t.Contains("compact powder") || t.Contains("bronzer") ||
-            t.Contains("shampoo") || t.Contains("skincare") || t.Contains("nail polish") ||
-            t.Contains("bra ") || t.Contains("bra set") || t.Contains("lingerie") ||
-            t.Contains("babydoll") || t.Contains("kurta") || t.Contains("shoe") ||
-            t.Contains("sneaker") || t.Contains("sandal") || t.Contains("slipper"))
-            return "other";
-
-        // ---- WEARABLES (sab se pehle — warna smartwatch mobile ban jaye) ----
-        if (t.Contains("smart watch") || t.Contains("smartwatch") || t.Contains("fitness band") ||
-            t.Contains("smart band") || t.Contains("mi band") || t.Contains("apple watch") ||
-            t.Contains("galaxy watch") || t.Contains("fitness tracker") || t.Contains("watch"))
-            return "wearables";
-
-        // ---- AUDIO ----
-        if (t.Contains("airpod") || t.Contains("earbud") || t.Contains("earphone") ||
-            t.Contains("headphone") || t.Contains("handsfree") || t.Contains("speaker") ||
-            t.Contains("buds") || t.Contains("soundbar") || t.Contains("home theater") ||
-            t.Contains("home theatre") || t.Contains("microphone"))
-            return "audio";
-
-        // ---- ACCESSORIES (chargers, cables, covers, power banks) ----
-        if (t.Contains("charger") || t.Contains("cable") || t.Contains("adapter") ||
-            t.Contains("case") || t.Contains("cover") || t.Contains("screen protector") ||
-            t.Contains("tempered") || t.Contains("power bank") || t.Contains("powerbank") ||
-            t.Contains("phone holder") || t.Contains("phone stand") || t.Contains("stylus") ||
-            t.Contains("card reader") || t.Contains("usb hub") || t.Contains("selfie stick") ||
-            t.Contains("mousepad") || t.Contains("cooling pad") || t.Contains("laptop bag") ||
-            t.Contains("laptop stand"))
-            return "accessories";
-
-        // ---- GAMING ----
-        if (t.Contains("playstation") || t.Contains("ps5") || t.Contains("ps4") ||
-            t.Contains("xbox") || t.Contains("nintendo") || t.Contains("gaming console") ||
-            t.Contains("game controller") || t.Contains("gamepad") || t.Contains("joystick") ||
-            t.Contains("dualsense"))
-            return "gaming";
-
-        // ---- CAMERAS & ACCESSORIES ----
-        if (t.Contains("dslr") || t.Contains("mirrorless") || t.Contains("camera") ||
-            t.Contains("gopro") || t.Contains("camera lens") || t.Contains("tripod") ||
-            t.Contains("drone") || t.Contains("memory card") || t.Contains("camera bag"))
-            return "cameras";
-
-        // ---- TVs & HOME ENTERTAINMENT ----
-        if (t.Contains("led tv") || t.Contains("smart tv") || t.Contains("television") ||
-            t.Contains("projector") || t.Contains("tv stick") || t.Contains("android box") ||
-            pt.Contains("tv"))
-            return "tv_entertainment";
-
-        // ---- KITCHEN APPLIANCES ----
-        if (t.Contains("blender") || t.Contains("air fryer") || t.Contains("toaster") ||
-            t.Contains("juicer") || t.Contains("grinder") || t.Contains("food processor") ||
-            t.Contains("coffee maker") || t.Contains("espresso") || t.Contains("kettle") ||
-            t.Contains("deep fryer") || t.Contains("sandwich maker") || t.Contains("oven") ||
-            t.Contains("chopper") || t.Contains("rice cooker") || t.Contains("hot plate"))
-            return "kitchen_appliances";
-
-        // ---- HOME APPLIANCES ----
-        if (t.Contains("refrigerator") || t.Contains("fridge") || t.Contains("freezer") ||
-            t.Contains("washing machine") || t.Contains("air conditioner") ||
-            t.Contains("split ac") || t.Contains("inverter ac") || t.Contains("microwave") ||
-            t.Contains("vacuum") || t.Contains("water dispenser") || t.Contains("geyser") ||
-            t.Contains("heater") || t.Contains("iron") || t.Contains("air cooler") ||
-            t.Contains("dryer") || t.Contains("ceiling fan") || t.Contains("pedestal fan"))
-            return "home_appliances";
-
-        // ---- MOBILES & TABLETS ----
-        if (t.Contains("iphone") || t.Contains("smartphone") || t.Contains("smart phone") ||
-            t.Contains("feature phone") || t.Contains("mobile phone") || t.Contains("ipad") ||
-            t.Contains("galaxy tab") || t.Contains("kindle") || t.Contains("surface pro") ||
-            pt == "tablet" || pt is "mobile" or "smartphone" or "feature phone" or "smart phone" ||
-            t.Contains("redmi") || t.Contains("infinix") || t.Contains("tecno") ||
-            t.Contains("vivo ") || t.Contains("oppo") || t.Contains("realme") ||
-            t.Contains("nokia") || t.Contains("itel") || t.Contains("pixel") ||
-            t.Contains("samsung galaxy s") || t.Contains("samsung galaxy a") ||
-            t.Contains("samsung galaxy z"))
-            return "mobiles_tablets";
-
-        // ---- LAPTOPS & COMPUTERS (monitor, printer, mouse, keyboard bhi) ----
-        if (t.Contains("laptop") || t.Contains("notebook") || t.Contains("macbook") ||
-            t.Contains("chromebook") || t.Contains("desktop") || t.Contains("imac") ||
-            t.Contains("monitor") || t.Contains("printer") || t.Contains("scanner") ||
-            t.Contains("mouse") || t.Contains("keyboard") || t.Contains("ssd") ||
-            t.Contains("hard drive") || t.Contains(" ram ") || t.Contains("ups") ||
-            t.Contains("toner") || t.Contains("cartridge") || t.Contains("flash drive") ||
-            t.Contains("graphic card") || t.Contains("processor"))
-            return "laptops_computers";
-
-        return "other";
-    }
 
     public async Task SyncAllProductsAsync()
     {
@@ -196,19 +89,7 @@ public class TelemartSyncService
                         var productType = p.TryGetProperty("product_type", out var ptE) ? ptE.GetString() : "";
                         var productUrl = $"https://www.telemart.pk/products/{handle}";
 
-                        var tagList = new List<string>();
-                        if (p.TryGetProperty("tags", out var tagsE) && tagsE.ValueKind == JsonValueKind.Array)
-                            foreach (var tg in tagsE.EnumerateArray())
-                                if (tg.GetString() is string s) tagList.Add(s);
-
-                        var category = MapCategory(productType, title, tagList);
-
-                        // Sirf 10 zaroori categories DB mein — baaki skip (bojh na pade)
-                        if (category == "other")
-                        {
-                            skipped++;
-                            continue;
-                        }
+                        var category = CategoryMapper.Map(title, productType);
 
                         string? image = null;
                         if (p.TryGetProperty("images", out var imgs) && imgs.GetArrayLength() > 0)
@@ -220,7 +101,7 @@ public class TelemartSyncService
                             if (vars[0].TryGetProperty("price", out var pr))
                                 decimal.TryParse(pr.GetString(), out price);
 
-                        if (price <= 0 || string.IsNullOrWhiteSpace(handle))
+                        if (string.IsNullOrWhiteSpace(handle))
                         {
                             skipped++;
                             continue;
@@ -231,6 +112,12 @@ public class TelemartSyncService
 
                         if (existing is null)
                         {
+                            if (category == "other" || price <= 0)
+                            {
+                                skipped++;
+                                continue;
+                            }
+
                             db.StoreListings.Add(new StoreListing
                             {
                                 StoreId    = telemart.Id,
@@ -240,23 +127,23 @@ public class TelemartSyncService
                                 ProductUrl = productUrl,
                                 ImageUrl   = image,
                                 Category   = category,
-                                ScrapedAt  = DateTime.UtcNow
+                                ScrapedAt  = DateTimeOffset.UtcNow
                             });
                         }
                         else
                         {
-                            if (existing.Price != price)
+                            if (price > 0 && existing.Price != price)
                             {
-                                db.PriceHistories.Add(new PriceHistory
+                                db.PriceHistory.Add(new PriceHistoryPoint
                                 {
                                     StoreListingId = existing.Id,
                                     Price          = existing.Price,
-                                    RecordedAt     = DateTime.UtcNow
+                                    RecordedAt     = DateTimeOffset.UtcNow
                                 });
                                 existing.Price = price;
                             }
                             existing.Category  = category;
-                            existing.ScrapedAt = DateTime.UtcNow;
+                            existing.ScrapedAt = DateTimeOffset.UtcNow;
                         }
 
                         totalSaved++;
@@ -294,7 +181,7 @@ public class TelemartSyncService
                 if (open is not null)
                 {
                     open.ItemsScraped = totalSaved;
-                    open.FinishedAt   = DateTime.UtcNow;
+                    open.FinishedAt   = DateTimeOffset.UtcNow;
                     await cdb.SaveChangesAsync();
                 }
             }
@@ -315,7 +202,7 @@ public class TelemartSyncService
                 if (stillOpen is not null)
                 {
                     stillOpen.ErrorMessage = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
-                    stillOpen.FinishedAt   = DateTime.UtcNow;
+                    stillOpen.FinishedAt   = DateTimeOffset.UtcNow;
                     await fdb.SaveChangesAsync();
                 }
             }

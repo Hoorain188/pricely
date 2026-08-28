@@ -183,11 +183,13 @@ export default function SearchScreen() {
                   activeOpacity={0.85}
                   onPress={() =>
                     navigation.navigate('ProductDetail', {
+                      id: product.id,
                       handle: product.handle,
                       url: product.url,
                       productName: product.name,
                       currentPrice: product.price,
                       imageUrl: product.imageUrl,
+                      store: product.store,
                     })
                   }
                 >

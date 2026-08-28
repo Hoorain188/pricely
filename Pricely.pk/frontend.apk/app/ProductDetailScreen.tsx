@@ -24,16 +24,15 @@ import { useUserStore } from '../context/UserStore';
 import LottieLoader from '../components/Lottieloader';
 import LottieBackButton from '../components/Lottiebackbutton';
 import CustomAlertDialog from '../components/CustomAlertDialog';
-import { fetchProductDetail, fetchMegaPkProductDetail, formatPrice, stripHtml, ProductDetail } from '../services/api';
+import { fetchProductDetail, fetchMegaPkProductDetail, fetchDarazProductDetail, fetchCompare, fetchPriceHistory, formatPrice, stripHtml, ProductDetail, CompareResponse, PriceHistoryResponse } from '../services/api';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-const STORES_COMPARE = [
-  { name: 'Telemart', price: 'Best Price', domain: 'telemart.pk', inStock: true, color: '#1D9A7C' },
-  { name: 'Mega.pk', price: 'Rs 55,200', domain: 'mega.pk', inStock: true, color: '#2F6FB0' },
-  { name: 'Daraz', price: 'Rs 56,100', domain: 'daraz.pk', inStock: true, color: '#E4326F' },
-  { name: 'Amazon', price: 'Rs 58,400', domain: 'amazon.com', inStock: false, color: '#B7791F' },
-];
+const STORE_COLORS: Record<string, { bg: string; domain: string }> = {
+  'telemart': { bg: '#1D9A7C', domain: 'telemart.pk' },
+  'mega.pk': { bg: '#2F6FB0', domain: 'mega.pk' },
+  'daraz': { bg: '#F57224', domain: 'daraz.pk' },
+};
 
 export default function ProductDetailScreen() {
   const route = useRoute<any>();
@@ -42,13 +41,19 @@ export default function ProductDetailScreen() {
 
   const handle = route.params?.handle || '';
   const productUrl = route.params?.url || '';
+  const listingId = route.params?.id || route.params?.listingId;
   const fallbackName = route.params?.productName || 'Product Detail';
   const fallbackPrice = route.params?.currentPrice || 'Rs 0';
   const fallbackImage = route.params?.imageUrl;
+  const storeName: string = (route.params?.store || '').toLowerCase();
+  // Human-readable store name for display (capitalised properly)
+  const displayStoreName = route.params?.store || (storeName === 'mega.pk' ? 'Mega.pk' : storeName === 'daraz' ? 'Daraz' : 'Telemart');
 
   const [detail, setDetail] = useState<ProductDetail | null>(null);
-  const [loading, setLoading] = useState<boolean>(!!handle || !!productUrl);
+  const [loading, setLoading] = useState<boolean>(false);
   const [selectedImageIdx, setSelectedImageIdx] = useState<number>(0);
+  const [compareData, setCompareData] = useState<CompareResponse | null>(null);
+  const [priceHistory, setPriceHistory] = useState<PriceHistoryResponse | null>(null);
 
   const productName = detail?.title || fallbackName;
   const rawPrice = detail?.variants && detail.variants.length > 0 ? detail.variants[0].price : fallbackPrice;
@@ -66,9 +71,45 @@ export default function ProductDetailScreen() {
 
   useEffect(() => {
     let alive = true;
-    const isMega = productUrl.includes('mega.pk');
 
-    if (isMega && productUrl) {
+    setDetail(null);
+    setDetailError(null);
+    setCompareData(null);
+    setSelectedImageIdx(0);
+
+    const numListingId = listingId ? Number(listingId) : undefined;
+    const compareTitle = fallbackName !== 'Product Detail' ? fallbackName : undefined;
+
+    console.log('listingId:', numListingId, 'compareData:', compareData);
+
+    fetchCompare(numListingId, compareTitle).then((res) => {
+      console.log('[ProductDetailScreen] compare result:', res);
+      if (alive && res?.hasComparison) {
+        setCompareData(res);
+      }
+    });
+
+    const isDaraz = storeName === 'daraz';
+    const isMega = storeName === 'mega.pk';
+    const isTelemart = storeName === 'telemart' || storeName === '';
+
+    if (isDaraz && productUrl) {
+      setLoading(true);
+      setDetailError(null);
+      fetchDarazProductDetail(productUrl)
+        .then((data) => {
+          if (alive) {
+            setDetail(data);
+            setLoading(false);
+          }
+        })
+        .catch((err: any) => {
+          if (alive) {
+            setDetailError(err?.message || "Can't reach server — check connection");
+            setLoading(false);
+          }
+        });
+    } else if (isMega && productUrl) {
       setLoading(true);
       setDetailError(null);
       fetchMegaPkProductDetail(productUrl)
@@ -84,7 +125,7 @@ export default function ProductDetailScreen() {
             setLoading(false);
           }
         });
-    } else if (handle) {
+    } else if (isTelemart && handle) {
       setLoading(true);
       setDetailError(null);
       fetchProductDetail(handle)
@@ -106,7 +147,17 @@ export default function ProductDetailScreen() {
     return () => {
       alive = false;
     };
-  }, [handle, productUrl]);
+  }, [handle, productUrl, storeName, listingId, fallbackName]);
+
+  // Fetch price history
+  useEffect(() => {
+    const numId = listingId ? Number(listingId) : 0;
+    if (numId > 0) {
+      fetchPriceHistory(numId, 30).then((res) => {
+        if (res) setPriceHistory(res);
+      });
+    }
+  }, [listingId]);
 
   const handleOpenStore = (urlToOpen?: string) => {
     const targetUrl = urlToOpen || detail?.url;
@@ -246,18 +297,69 @@ export default function ProductDetailScreen() {
             <View style={styles.priceRow}>
               <Text style={styles.price}>{currentPrice}</Text>
               <View style={styles.bestPriceBadge}>
-                <Text style={styles.bestPriceText}>{detail?.store || 'Telemart'}</Text>
+                <Text style={styles.bestPriceText}>{detail?.store || displayStoreName}</Text>
               </View>
             </View>
 
-            {/* External URL Action Button */}
-            {detail?.url ? (
-              <TouchableOpacity style={styles.externalBtn} onPress={() => handleOpenStore(detail.url)}>
+            {/* External URL Action Button — works for ALL stores */}
+            {(detail?.url || productUrl) ? (
+              <TouchableOpacity style={styles.externalBtn} onPress={() => handleOpenStore(detail?.url || productUrl)}>
                 <ExternalLink size={16} color="#FFFFFF" />
-                <Text style={styles.externalBtnText}>View on {detail.store || 'Store'}</Text>
+                <Text style={styles.externalBtnText}>
+                  {storeName === 'daraz'
+                    ? 'View full details & reviews on Daraz'
+                    : `View on ${detail?.store || displayStoreName}`}
+                </Text>
               </TouchableOpacity>
             ) : null}
           </View>
+
+          {/* Compare Live Prices Section (Shown when 2+ stores match) */}
+          {compareData && compareData.hasComparison && compareData.offers.length > 0 && (
+            <>
+              <Text style={styles.sectionHeader}>Compare Prices Across Stores</Text>
+              <View style={styles.storesBlock}>
+                {compareData.offers.map((offer, idx) => {
+                  const sKey = offer.store.toLowerCase();
+                  const meta = STORE_COLORS[sKey] || { bg: '#0E6B4F', domain: `${sKey}.com` };
+                  const isLowest = idx === 0;
+
+                  return (
+                    <View key={`${offer.store}-${idx}`} style={styles.storeRow}>
+                      <View style={styles.storeLogoBadge}>
+                        <View style={[styles.storeInitialBox, { backgroundColor: meta.bg }]}>
+                          <Text style={styles.storeInitialText}>{offer.store[0]}</Text>
+                        </View>
+                        <View>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.storeName}>{offer.store}</Text>
+                            {isLowest && (
+                              <View style={styles.lowestBadge}>
+                                <Text style={styles.lowestBadgeText}>Lowest</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={styles.storeDomain}>{meta.domain}</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.storeActions}>
+                        <Text style={[styles.storePrice, isLowest && { color: '#0E6B4F' }]}>
+                          {formatPrice(offer.price)}
+                        </Text>
+                        <TouchableOpacity
+                          style={styles.buyButton}
+                          onPress={() => handleOpenStore(offer.url)}
+                        >
+                          <Text style={styles.buyButtonText}>View Offer</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </>
+          )}
 
           {/* Product Variants (if available) */}
           {detail?.variants && detail.variants.length > 0 ? (
@@ -294,25 +396,58 @@ export default function ProductDetailScreen() {
           ) : null}
 
           {/* Price History Chart */}
-          <Text style={styles.sectionHeader}>Price History (30 Days)</Text>
-          <View style={styles.chartCard}>
-            <Svg height="120" width={SCREEN_WIDTH - 68}>
-              <Path d="M0,10 L300,10 M0,60 L300,60 M0,110 L300,110" stroke="#E9EFE9" strokeWidth="1" />
-              <Path
-                d="M10,20 Q80,10 140,80 T280,100"
-                fill="none"
-                stroke="#0E6B4F"
-                strokeWidth="3.5"
-              />
-              <Circle cx="10" cy="20" r="5" fill="#0E6B4F" />
-              <Circle cx="140" cy="80" r="5" fill="#D97706" />
-              <Circle cx="280" cy="100" r="6" fill="#C0392B" />
-            </Svg>
-            <View style={styles.chartLabels}>
-              <Text style={styles.chartLabel}>30d ago: High</Text>
-              <Text style={styles.chartLabel}>Current: {currentPrice}</Text>
-            </View>
-          </View>
+          {priceHistory && priceHistory.hasHistory && priceHistory.points.length > 1 && (() => {
+            const chartW = SCREEN_WIDTH - 68;
+            const chartH = 120;
+            const pad = { top: 12, bottom: 12, left: 10, right: 10 };
+            const pts = priceHistory.points;
+            const prices = pts.map(p => p.price);
+            const minP = Math.min(...prices);
+            const maxP = Math.max(...prices);
+            const rangeP = maxP - minP || 1;
+            const w = chartW - pad.left - pad.right;
+            const h = chartH - pad.top - pad.bottom;
+
+            const coords = pts.map((p, i) => ({
+              x: pad.left + (pts.length > 1 ? (i / (pts.length - 1)) * w : w / 2),
+              y: pad.top + h - ((p.price - minP) / rangeP) * h,
+              price: p.price,
+            }));
+
+            const pathD = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+            const isBestPrice = priceHistory.currentPrice <= priceHistory.lowestPrice;
+
+            return (
+              <>
+                <Text style={styles.sectionHeader}>Price History (30 Days)</Text>
+                <View style={styles.chartCard}>
+                  <Svg height={chartH} width={chartW}>
+                    {/* Grid lines */}
+                    <Path d={`M${pad.left},${pad.top} L${chartW - pad.right},${pad.top}`} stroke="#E9EFE9" strokeWidth="1" />
+                    <Path d={`M${pad.left},${pad.top + h / 2} L${chartW - pad.right},${pad.top + h / 2}`} stroke="#E9EFE9" strokeWidth="1" />
+                    <Path d={`M${pad.left},${pad.top + h} L${chartW - pad.right},${pad.top + h}`} stroke="#E9EFE9" strokeWidth="1" />
+                    {/* Line */}
+                    <Path d={pathD} fill="none" stroke="#0E6B4F" strokeWidth="3" />
+                    {/* Data points */}
+                    {coords.map((c, i) => (
+                      <Circle key={i} cx={c.x} cy={c.y} r={4}
+                        fill={i === coords.length - 1 ? '#0E6B4F' : c.price === priceHistory.lowestPrice ? '#D97706' : '#0E6B4F'}
+                      />
+                    ))}
+                  </Svg>
+                  <View style={styles.chartLabels}>
+                    <Text style={[styles.chartLabel, { color: '#D97706' }]}>Lowest: {formatPrice(priceHistory.lowestPrice)}</Text>
+                    <Text style={[styles.chartLabel, { color: '#0E6B4F' }]}>Current: {formatPrice(priceHistory.currentPrice)}</Text>
+                  </View>
+                  {isBestPrice && (
+                    <View style={{ backgroundColor: '#EAF4EF', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'center', marginTop: 8 }}>
+                      <Text style={{ fontSize: 12, fontFamily: fonts.button, color: '#0E6B4F' }}>🎉 Best price in 30 days!</Text>
+                    </View>
+                  )}
+                </View>
+              </>
+            );
+          })()}
 
           {/* Price Alerts Form */}
           <Text style={styles.sectionHeader}>Set Price Alert</Text>
@@ -332,42 +467,6 @@ export default function ProductDetailScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-          </View>
-
-          {/* Compare Stores */}
-          <Text style={styles.sectionHeader}>Compare Stores</Text>
-          <View style={styles.storesBlock}>
-            {STORES_COMPARE.map((store) => {
-              const isCurrentStore = store.name.toLowerCase() === (detail?.store || 'Telemart').toLowerCase();
-              return (
-                <View key={store.name} style={styles.storeRow}>
-                  <View style={styles.storeLogoBadge}>
-                    <View style={[styles.storeInitialBox, { backgroundColor: store.color }]}>
-                      <Text style={styles.storeInitialText}>{store.name[0]}</Text>
-                    </View>
-                    <View>
-                      <Text style={styles.storeName}>{store.name}</Text>
-                      <Text style={styles.storeDomain}>{store.domain}</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.storeActions}>
-                    <Text style={styles.storePrice}>
-                      {isCurrentStore ? currentPrice : store.price}
-                    </Text>
-                    <TouchableOpacity
-                      style={[styles.buyButton, !store.inStock && styles.buyButtonDisabled]}
-                      disabled={!store.inStock}
-                      onPress={() => handleOpenStore(isCurrentStore ? detail?.url : undefined)}
-                    >
-                      <Text style={styles.buyButtonText}>
-                        {store.inStock ? 'Go to Store' : 'Out of stock'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })}
           </View>
         </ScrollView>
       )}
@@ -712,6 +811,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: fonts.monoEmphasis,
     color: colors.textPrimary,
+  },
+  lowestBadge: {
+    backgroundColor: '#EAF4EF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  lowestBadgeText: {
+    fontSize: 10,
+    fontFamily: fonts.button,
+    color: '#0E6B4F',
   },
   buyButton: {
     backgroundColor: '#0E6B4F',

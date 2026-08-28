@@ -42,44 +42,37 @@ public class AuthService
     {
         var email = Normalize(req.Email);
 
-        var existing = await _db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+        var existingUser = await _db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+        if (existingUser != null && existingUser.EmailVerifiedAt != null)
+            throw new AuthException("email_taken", "An account with this email already exists — try signing in instead.");
 
         // The ADMIN tab only ever *requests* Admin. Support and Read-only are
         // assigned by an existing admin later; nobody can pick them at signup.
         var role = req.Portal == Portal.Admin ? UserRole.Admin : UserRole.User;
 
-        if (existing is not null)
+        User user;
+        if (existingUser != null)
         {
-            // A verified account is a real account — send them to sign in.
-            if (existing.EmailVerifiedAt is not null)
-                throw new AuthException("email_taken", "An account with this email already exists — try signing in instead.");
-
-            // Never verified: the row is a dead end. They cannot sign in to it
-            // and cannot sign up over it, so they are stranded for good. Treat
-            // this as a fresh attempt — take the new details, reissue a code.
-            existing.Name = req.Name.Trim();
-            existing.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password);
-            existing.Role = role;
-            existing.IsActive = false;
-            await _db.SaveChangesAsync(ct);
-
-            await IssueCodeAsync(email, VerificationPurpose.Signup, ct);
-            return new AuthStatusResponse(
-                "verification_sent",
-                $"We sent a 6-digit code to {email}. Enter it to finish creating your account.");
+            user = existingUser;
+            user.Name = req.Name.Trim();
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password);
+            user.Role = role;
+            user.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+        else
+        {
+            user = new User
+            {
+                Name = req.Name.Trim(),
+                Email = email,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
+                Role = role,
+                IsActive = false,          // flipped on once the email code is confirmed
+                EmailVerifiedAt = null
+            };
+            _db.Users.Add(user);
         }
 
-        var user = new User
-        {
-            Name = req.Name.Trim(),
-            Email = email,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
-            Role = role,
-            IsActive = false,          // flipped on once the email code is confirmed
-            EmailVerifiedAt = null
-        };
-
-        _db.Users.Add(user);
         await _db.SaveChangesAsync(ct);
 
         await IssueCodeAsync(email, VerificationPurpose.Signup, ct);

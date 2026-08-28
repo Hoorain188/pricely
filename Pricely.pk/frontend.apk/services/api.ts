@@ -2,35 +2,13 @@
 // Connects React Native frontend screens to ASP.NET Core backend API.
 
 import axios from 'axios';
-import Constants from 'expo-constants';
+import { API_BASE_URL } from '../config/api';
 
-/**
- * Single Backend Base URL Configuration Constant:
- * Dynamically resolves your PC's local Wi-Fi IP address when running via Expo Go on a physical phone.
- * Falls back to 10.0.2.2 for Android Emulator.
- *
- * These are the customer-facing endpoints (browse, search, product detail),
- * served by PriceCompare.Api on 5079 — a different process from the auth and
- * admin API on 5099, which config/api.ts resolves. Two ports, two variables.
- *
- * EXPO_PUBLIC_SCRAPER_API_URL overrides everything below, and MUST be set for
- * a standalone build: outside Expo Go there is no hostUri to borrow, and the
- * 10.0.2.2 fallback only means anything to the Android emulator.
- */
-const getApiBaseUrl = (): string => {
-  const override = process.env.EXPO_PUBLIC_SCRAPER_API_URL;
-  if (override) return override.replace(/\/$/, '');
-
-  const host = Constants.expoConfig?.hostUri?.split(':')[0];
-  if (host && host !== 'localhost' && host !== '127.0.0.1') {
-    return `http://${host}:5079`;
-  }
-  return 'http://10.0.2.2:5079';
-};
-
-export const API_BASE_URL = getApiBaseUrl();
+// Re-export so existing imports from this file keep working.
+export { API_BASE_URL };
 
 export interface ApiProduct {
+  id?: number;
   title: string;
   store: string;
   price: string;
@@ -38,10 +16,21 @@ export interface ApiProduct {
   handle: string;
   url: string;
   imageUrl: string;
+  hasComparison?: boolean;
 }
 
 export interface SearchResponse {
   source: string;
+  results: ApiProduct[];
+}
+
+export interface BrowseResponse {
+  source: string;
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
   results: ApiProduct[];
 }
 
@@ -108,7 +97,7 @@ export async function fetchSearchProducts(query: string, store?: string): Promis
 
     const response = await axios.get<SearchResponse>(`${API_BASE_URL}/api/search`, {
       params,
-      timeout: 8000,
+      timeout: 15000,
     });
 
     if (response.data && Array.isArray(response.data.results)) {
@@ -122,28 +111,35 @@ export async function fetchSearchProducts(query: string, store?: string): Promis
 }
 
 /**
- * Browse products by category from backend API (GET /api/browse?category={cat}&store={store}&seed={seed})
- * Returns products from both Telemart and Mega.pk unless a specific store is provided.
- * seed param rotates/varies results on refresh.
+ * Browse products by category from backend API (GET /api/browse?category={cat}&store={store}&seed={seed}&page={page}&pageSize={pageSize})
+ * Returns paginated products with hasComparison flag.
  */
-export async function fetchBrowseProducts(category: string, store?: string, seed?: number): Promise<ApiProduct[]> {
+export async function fetchBrowseProducts(
+  category: string,
+  store?: string,
+  seed?: number,
+  page?: number,
+  pageSize?: number
+): Promise<BrowseResponse> {
   const trimmed = category.trim();
-  if (!trimmed) return [];
+  if (!trimmed) return { source: 'database', page: 1, pageSize: 60, total: 0, totalPages: 0, hasMore: false, results: [] };
 
   try {
     const params: Record<string, string> = { category: trimmed };
     if (store) params.store = store;
     if (seed !== undefined && seed !== 0) params.seed = String(seed);
+    if (page !== undefined && page > 0) params.page = String(page);
+    if (pageSize !== undefined && pageSize > 0) params.pageSize = String(pageSize);
 
-    const response = await axios.get<SearchResponse>(`${API_BASE_URL}/api/browse`, {
+    const response = await axios.get<BrowseResponse>(`${API_BASE_URL}/api/browse`, {
       params,
-      timeout: 8000,
+      timeout: 15000,
     });
 
     if (response.data && Array.isArray(response.data.results)) {
-      return response.data.results;
+      return response.data;
     }
-    return [];
+    return { source: 'database', page: page || 1, pageSize: pageSize || 60, total: 0, totalPages: 0, hasMore: false, results: [] };
   } catch (error: any) {
     console.warn(`[API] Browse failed for category "${trimmed}":`, error?.message || error);
     throw new Error("Can't reach server — check connection");
@@ -159,7 +155,7 @@ export async function fetchProductDetail(handle: string): Promise<ProductDetail 
 
   try {
     const response = await axios.get<ProductDetail>(`${API_BASE_URL}/api/product/${encodeURIComponent(trimmed)}`, {
-      timeout: 8000,
+      timeout: 15000,
     });
     return response.data || null;
   } catch (error: any) {
@@ -178,7 +174,7 @@ export async function fetchMegaPkProductDetail(productUrl: string): Promise<Prod
   try {
     const response = await axios.get<any>(`${API_BASE_URL}/api/megapk-product`, {
       params: { url: trimmed },
-      timeout: 8000,
+      timeout: 15000,
     });
     const data = response.data;
     if (!data) return null;
@@ -201,6 +197,36 @@ export async function fetchMegaPkProductDetail(productUrl: string): Promise<Prod
 }
 
 /**
+ * Get Daraz product detail from backend API by URL (GET /api/daraz-product?url={url})
+ */
+export async function fetchDarazProductDetail(productUrl: string): Promise<ProductDetail | null> {
+  const trimmed = productUrl.trim();
+  if (!trimmed) return null;
+
+  try {
+    const response = await axios.get<any>(`${API_BASE_URL}/api/daraz-product`, {
+      params: { url: trimmed },
+      timeout: 15000,
+    });
+    const data = response.data;
+    if (!data) return null;
+
+    return {
+      title: data.title || '',
+      store: 'Daraz',
+      description: data.note || 'Poori tafseel aur reviews Daraz par dekhein',
+      brand: data.brand || '',
+      images: Array.isArray(data.images) ? data.images.filter(Boolean) : [],
+      variants: [{ title: 'Standard', price: data.price || '0', available: true }],
+      url: data.viewOnStoreUrl || trimmed,
+    };
+  } catch (error: any) {
+    console.warn(`[API] Fetch Daraz detail failed for url "${trimmed}":`, error?.message || error);
+    throw new Error("Can't reach server — check connection");
+  }
+}
+
+/**
  * Fetch categories for a specific store (GET /api/store-categories?store={store})
  */
 export async function fetchStoreCategories(store: string): Promise<{ category: string; count: number }[]> {
@@ -210,7 +236,7 @@ export async function fetchStoreCategories(store: string): Promise<{ category: s
   try {
     const response = await axios.get<{ category: string; count: number }[]>(`${API_BASE_URL}/api/store-categories`, {
       params: { store: trimmed },
-      timeout: 8000,
+      timeout: 15000,
     });
     return response.data || [];
   } catch (error: any) {
@@ -219,3 +245,78 @@ export async function fetchStoreCategories(store: string): Promise<{ category: s
   }
 }
 
+export interface CompareOffer {
+  store: string;
+  price: number;
+  url?: string;
+}
+
+export interface CompareResponse {
+  hasComparison: boolean;
+  lowestPrice: number;
+  offers: CompareOffer[];
+}
+
+/**
+ * Fetch live price comparison across stores for a product (GET /api/compare?listingId={id}&title={title})
+ */
+export async function fetchCompare(listingId?: number, title?: string): Promise<CompareResponse | null> {
+  try {
+    const params: Record<string, any> = {};
+    if (listingId && !isNaN(listingId) && listingId > 0) {
+      params.listingId = listingId;
+    }
+    if (title && title.trim() && title !== 'Product Detail') {
+      params.title = title.trim();
+    }
+
+    if (!params.listingId && !params.title) return null;
+
+    const requestUrl = `${API_BASE_URL}/api/compare`;
+    console.log('[fetchCompare] Requesting URL:', requestUrl, 'params:', params);
+
+    const response = await axios.get<CompareResponse>(requestUrl, {
+      params,
+      timeout: 10000,
+    });
+
+    console.log('[fetchCompare] Response data:', response.data);
+    return response.data || null;
+  } catch (error: any) {
+    console.warn(`[API] Fetch compare failed:`, error?.message || error);
+    return null;
+  }
+}
+
+export interface PriceHistoryPoint {
+  price: number;
+  date: string;
+}
+
+export interface PriceHistoryResponse {
+  hasHistory: boolean;
+  currentPrice: number;
+  lowestPrice: number;
+  highestPrice: number;
+  averagePrice: number;
+  pointCount: number;
+  points: PriceHistoryPoint[];
+}
+
+/**
+ * Fetch price history for a listing (GET /api/price-history?listingId={id}&days={days})
+ */
+export async function fetchPriceHistory(listingId: number, days: number = 30): Promise<PriceHistoryResponse | null> {
+  if (!listingId || isNaN(listingId) || listingId <= 0) return null;
+
+  try {
+    const response = await axios.get<PriceHistoryResponse>(`${API_BASE_URL}/api/price-history`, {
+      params: { listingId, days },
+      timeout: 10000,
+    });
+    return response.data || null;
+  } catch (error: any) {
+    console.warn(`[API] Fetch price history failed for listing ${listingId}:`, error?.message || error);
+    return null;
+  }
+}

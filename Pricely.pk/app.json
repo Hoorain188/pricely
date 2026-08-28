@@ -1,5 +1,4 @@
 {
-  "$schema": "https://json.schemastore.org/app-config.json",
   "expo": {
     "name": "mobile",
     "slug": "mobile",
@@ -8,12 +7,8 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "updates": {
-      "enabled": false
-    },
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "enabled": false,
+      "fallbackToCacheTimeout": 0
     },
     "ios": {
       "supportsTablet": true
@@ -24,7 +19,6 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {

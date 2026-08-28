@@ -27,7 +27,7 @@ interface Store {
 }
 
 const STORES: Store[] = [
-  { key: 'daraz', name: 'Daraz', domain: 'daraz.pk', fallbackColor: '#E4326F' },
+  { key: 'daraz', name: 'Daraz', domain: 'daraz.pk', fallbackColor: '#F57224' },
   { key: 'megapk', name: 'Mega.pk', domain: 'mega.pk', fallbackColor: '#2F6FB0' },
   { key: 'telemart', name: 'Telemart', domain: 'telemart.pk', fallbackColor: '#1D9A7C' },
   { key: 'amazon', name: 'Amazon', domain: 'amazon.com', fallbackColor: '#B7791F' },
@@ -205,6 +205,8 @@ export default function HomeScreen() {
                     navigation.navigate('Category', { categoryKey: 'mobiles_tablets', storeFilter: 'Telemart' });
                   } else if (store.key === 'megapk') {
                     navigation.navigate('Category', { categoryKey: 'mobiles_tablets', storeFilter: 'Mega.pk' });
+                  } else if (store.key === 'daraz') {
+                    navigation.navigate('Category', { categoryKey: 'mobiles_tablets', storeFilter: 'Daraz' });
                   } else {
                     navigation.navigate('Search', { storeFilter: store.name });
                   }
@@ -282,10 +284,12 @@ export default function HomeScreen() {
                 activeOpacity={0.85}
                 onPress={() =>
                   navigation.navigate('ProductDetail', {
+                    id: deal.idNum,
                     handle: deal.handle,
                     productName: deal.name,
                     currentPrice: deal.price,
                     imageUrl: deal.imageUrl,
+                    store: deal.store,
                   })
                 }
               >

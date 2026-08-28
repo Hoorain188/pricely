@@ -13,7 +13,7 @@ import { TeamProvider } from './frontend.apk/context/TeamContext';
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Fraunces_600SemiBold,
     Fraunces_700Bold,
     Inter_400Regular,
@@ -23,7 +23,11 @@ export default function App() {
     IBMPlexMono_700Bold,
   });
 
-  if (!fontsLoaded) {
+  if (fontError) {
+    console.warn('Font loading failed, falling back to system fonts:', fontError);
+  }
+
+  if (!fontsLoaded && !fontError) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F7F3' }}>
         <ActivityIndicator size="large" color="#0E6B4F" />

@@ -481,7 +481,7 @@ public class AuthService
         invite.InviteToken = null;   // single use
 
         _activity.Record(ActivityActions.AcceptInvite, "team_request", invite.Id,
-            new { invite.Email, role = user.Role.ToWire() });
+            new { invite.Email, role = user.Role.ToWire() }, actorId: user.Id);
 
         await _db.SaveChangesAsync(ct);
 

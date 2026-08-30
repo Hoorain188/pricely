@@ -73,7 +73,9 @@ public class DuplicatesController : ControllerBase
                 // The group has no title of its own; use the longest listing
                 // title, which is usually the most complete one.
                 listings.OrderByDescending(sl => sl.RawTitle.Length).FirstOrDefault()?.RawTitle ?? "Untitled",
-                (int)Math.Round(g.Confidence * 100),
+                // Confidence is stored as a percentage (70.00, 100.00), not a
+                // 0-1 fraction — multiplying by 100 here rendered "7000% MATCH".
+                (int)Math.Round(g.Confidence),
                 // Null until merged. The Split button needs this — passing a
                 // listing id instead silently splits the wrong thing.
                 listings.FirstOrDefault(sl => sl.ProductId != null)?.ProductId,

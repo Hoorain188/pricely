@@ -67,7 +67,7 @@ public class TeamController : ControllerBase
     {
         var requests = await _team.GetRequestsAsync(status ?? TeamRequestStatus.Pending, ct);
         return Ok(requests
-            .Select(r => new TeamRequestDto(r.Id, r.Email, r.Name, r.RequestedRole, r.CreatedAt))
+            .Select(r => new TeamRequestDto(r.Id, r.Email, r.Name, r.RequestedRole, r.CreatedAt, r.Type, r.ExpiresAt))
             .ToList());
     }
 

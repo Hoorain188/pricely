@@ -85,8 +85,10 @@ public class DuplicatesController : ControllerBase
                     sl.Store.Name,
                     sl.Price,
                     "PKR",
-                    // Pre-tick everything except the weakest match, mirroring the mock.
-                    PreSelected: i < listings.Count - 1 || listings.Count == 1)).ToList());
+                    // Tick everything. Leaving the last one out came from the
+                    // mock, but merging a single listing produces no comparison,
+                    // so it just made the admin re-tick a box 194 times.
+                    PreSelected: true)).ToList());
         }).ToList();
 
         return Ok(new DuplicatesResponse(

@@ -1,3 +1,4 @@
+using Hangfire;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -24,12 +25,11 @@ public class ScrapersController : ControllerBase
     /// store slug -> sync endpoint on PriceCompare.Api. Keyed by slug, never by
     /// id: the two databases number their stores differently.
     /// </summary>
-    private static readonly Dictionary<string, string> SyncPaths =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["telemart"] = "/api/sync-telemart",
-            ["megapk"]   = "/api/sync-megapk",
-        };
+    // PriceCompare.Api was folded into this project, so there is no second
+    // service to POST to any more — MonitoredSyncService runs in-process and
+    // opens its own scraper_runs row.
+    private static readonly HashSet<string> SyncableSlugs =
+        new(StringComparer.OrdinalIgnoreCase) { "telemart", "megapk", "daraz" };
 
     private readonly AppDbContext _db;
     private readonly IActivityLogger _log;
@@ -63,7 +63,7 @@ public class ScrapersController : ControllerBase
         var store = await _db.Stores.FirstOrDefaultAsync(s => s.Id == storeId, ct);
         if (store is null) return NotFound();
 
-        if (!SyncPaths.TryGetValue(store.Slug, out var syncPath))
+        if (!SyncableSlugs.Contains(store.Slug))
             return BadRequest(new { title = $"No scraper is wired up for {store.Name}" });
 
         var staleBefore = DateTimeOffset.UtcNow - StaleAfter;
@@ -75,43 +75,13 @@ public class ScrapersController : ControllerBase
         if (alreadyRunning)
             return Conflict(new { title = $"A {store.Name} run is already in progress" });
 
-        // This opens the row; the scraper closes it when the job finishes.
-        // It has to happen here because PriceCompare.Api's ScraperRun model has
-        // no Status field, and the column is NOT NULL with no default.
-        var run = new ScraperRun
-        {
-            StoreId      = storeId,
-            Status       = ScraperRunStatus.Ok,   // provisional until it finishes
-            ItemsScraped = 0,
-            StartedAt    = DateTimeOffset.UtcNow,
-            FinishedAt   = null
-        };
-
-        _db.ScraperRuns.Add(run);
         _log.Record("scraper.rerun", "store", storeId, new { storeName = store.Name });
         await _db.SaveChangesAsync(ct);
 
-        var baseUrl = _config["ScraperApi:BaseUrl"] ?? "http://localhost:5079";
+        // The job opens and closes its own scraper_runs row, so this must not
+        // create one as well.
+        BackgroundJob.Enqueue<MonitoredSyncService>(s => s.RunWithMonitoringAsync(store.Slug));
 
-        try
-        {
-            var client = _http.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
-
-            var resp = await client.PostAsync($"{baseUrl}{syncPath}", null, ct);
-            resp.EnsureSuccessStatusCode();
-        }
-        catch (Exception ex)
-        {
-            // Close the run as failed, otherwise it sits open for 15 minutes and
-            // blocks retries while the scraper API is down.
-            return StatusCode(502, new
-            {
-                title  = "The scraper API did not accept the job",
-                detail = ex.Message
-            });
-        }
-
-        return Accepted(new { jobId = run.Id, store = store.Name });
+        return Accepted(new { store = store.Name });
     }
 }

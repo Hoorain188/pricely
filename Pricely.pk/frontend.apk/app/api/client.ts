@@ -244,7 +244,7 @@ export const api = {
   dashboard: () => request<DashboardResponse>('/admin/dashboard'),
 
   rerunScraper: (storeId: number) =>
-    request<{ jobId: string }>(`/admin/scrapers/${storeId}/run`, { method: 'POST' }),
+    request<{ store: string }>(`/admin/scrapers/${storeId}/run`, { method: 'POST' }),
 
   duplicates: (status: 'pending' | 'merged', search?: string) =>
     request<DuplicatesResponse>(

@@ -140,7 +140,7 @@ export default function AdminSettingsScreen({ navigation }: AdminSettingsScreenP
               <Text style={styles.rowLabel}>Two-factor authentication</Text>
               {/* Not built yet. Saying OFF is honest; saying ON is a lie that
                   makes people think they are protected when they are not. */}
-              <Text style={styles.rowValueMuted}>Not set up</Text>
+              <Text style={styles.rowValueMuted}>Coming soon</Text>
             </View>
             <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('ActiveSessions')}>
               <Text style={styles.rowLabel}>Active sessions</Text>

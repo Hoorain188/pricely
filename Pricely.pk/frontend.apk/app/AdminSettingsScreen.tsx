@@ -132,6 +132,10 @@ export default function AdminSettingsScreen({ navigation }: AdminSettingsScreenP
                   : `${teamCount} member${teamCount === 1 ? '' : 's'} · roles set`} ›
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('ChangePassword')}>
+              <Text style={styles.rowLabel}>Change password</Text>
+              <Text style={styles.rowValue}>Update ›</Text>
+            </TouchableOpacity>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Two-factor authentication</Text>
               {/* Not built yet. Saying OFF is honest; saying ON is a lie that

@@ -16,13 +16,21 @@ public class DeduplicationService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Two listings more than this far apart in price are not the same product.
+    /// Title text alone cannot tell a Dawlance DW 115 from a DW 560, or one
+    /// Westpoint blender from another, because every store writes model codes
+    /// differently. Price is the one signal that does not depend on wording.
+    /// </summary>
+    private const decimal MaxPriceRatio = 2.5m;
+
     private static readonly string[] NoiseWords = new[]
     {
         "with", "official", "warranty", "box", "packed", "brand", "new",
         "sim", "dual", "single", "used", "original", "genuine", "sealed",
         "pack", "pakistan", "price", "in", "the", "and", "for", "edition",
         "version", "model", "latest", "smartphone", "mobile", "storage",
-        "ram", "rom", "approved", "pta", "non", "nonpta", "wifi", "5g", "4g", "lte",
+        "ram", "rom", "approved", "wifi", "5g", "4g", "lte",
         "inspected", "condition", "gift", "surprise", "free", "top", "rated",
         "best", "just", "like", "high", "performance", "reliable", "affordable",
         "budget", "friendly", "supported", "pubg", "daraz", "battery", "mah",
@@ -35,6 +43,54 @@ public class DeduplicationService
         "filter", "clip", "holder", "stand", "pouch", "skin", "sticker",
         "grip", "strap", "mount"
     };
+
+    // Storage is the biggest price differentiator on a phone, so it belongs in
+    // the key. It used to be stripped out entirely, which made "Z Fold 8 256GB"
+    // and "512GB" identical and merged them at confidence 100.
+    private static string ExtractCapacity(string title)
+    {
+        var t = title.ToLower();
+        var sizes = new List<int>();
+
+        foreach (Match m in Regex.Matches(t, @"(\d+)\s*(gb|tb)"))
+        {
+            if (!int.TryParse(m.Groups[1].Value, out var n)) continue;
+            if (m.Groups[2].Value == "tb") n *= 1024;
+            sizes.Add(n);
+        }
+
+        // "12/256" and "12/512" — RAM first, storage second.
+        foreach (Match m in Regex.Matches(t, @"\b(\d{1,2})\s*/\s*(\d{2,4})\b"))
+            if (int.TryParse(m.Groups[2].Value, out var n)) sizes.Add(n);
+
+        // RAM is always the smaller figure when a title carries both.
+        return sizes.Count == 0 ? "" : "cap" + sizes.Max();
+    }
+
+    // Units, not identity. "5g", "128gb", "4385mah" say nothing about which
+    // product this is; "7a", "s22" and "wf-738" say everything.
+    private static readonly string[] UnitSuffixes =
+        { "gb", "tb", "mb", "mah", "hz", "ghz", "mp", "mm", "cm", "inch", "w", "g", "k",
+          "nits", "ppi", "wh", "kg", "ml", "fps", "bit", "v", "hrs", "h" };
+
+    private static bool IsUnitToken(string w)
+    {
+        var m = Regex.Match(w, @"^\d+(?:\.\d+)?([a-z]+)$");
+        return m.Success && UnitSuffixes.Contains(m.Groups[1].Value);
+    }
+
+    /// <summary>
+    /// A token that names *which* product this is — a model designator. Two
+    /// listings carrying different ones are different products no matter how
+    /// much of the rest of the title they share, which is how five Google
+    /// Pixels (6a, 7a, 9a, 10a, 10) ended up in one group.
+    /// </summary>
+    private static bool IsIdentityToken(string w)
+    {
+        if (w.StartsWith("cap") || w == "pta" || w == "nonpta") return false;
+        if (!w.Any(char.IsDigit) || !w.Any(char.IsLetter)) return false;
+        return !IsUnitToken(w);
+    }
 
     public static string BuildMatchKey(string title)
     {
@@ -60,6 +116,10 @@ public class DeduplicationService
         // brackets hatao
         t = Regex.Replace(t, @"\(.*?\)|\[.*?\]", " ");
 
+        // PTA vs non-PTA is a Rs 85,000 difference on the same handset, so it
+        // has to survive into the key as one token rather than a stray "non".
+        t = Regex.Replace(t, @"\bnon[\s-]*pta\b", " nonpta ", RegexOptions.IgnoreCase);
+
         // Storage HATAO (har store nahi likhta)
         t = Regex.Replace(t, @"\d+\s*(gb|tb)\s*(storage|ram|rom)?", " ", RegexOptions.IgnoreCase);
 
@@ -68,7 +128,10 @@ public class DeduplicationService
         t = Regex.Replace(t, @"(\d+)\s*inch", "$1inch", RegexOptions.IgnoreCase);
 
         // seller codes hatao (r-l310, l310f)
-        t = Regex.Replace(t, @"\b[a-z]{1,2}-[a-z]?\d{2,4}[a-z]?\b", " ", RegexOptions.IgnoreCase);
+        // Hyphenated codes like WF-738 are model numbers, not seller codes, and
+        // they are often the only thing separating one product from another —
+        // 21 different Westpoint blenders collapsed into one group without them.
+        // t = Regex.Replace(t, @"\b[a-z]{1,2}-[a-z]?\d{2,4}[a-z]?\b", " ", RegexOptions.IgnoreCase);
         t = Regex.Replace(t, @"\b[a-z]{2,3}\d{3,4}[a-z]\b", " ", RegexOptions.IgnoreCase);
 
         t = Regex.Replace(t, @"[^a-z0-9\s]", " ");
@@ -85,21 +148,49 @@ public class DeduplicationService
         // Agar phir bhi lamba, pehle 8 words
         if (kept.Count > 8) kept = kept.Take(8).ToList();
 
-        return string.Join(" ", kept).Trim();
+        var key = string.Join(" ", kept).Trim();
+        var cap = ExtractCapacity(title);
+
+        // Appended, so a listing that names no size stays distinct from every
+        // listing that does rather than matching all of them.
+        return cap.Length > 0 ? key + " " + cap : key;
     }
 
     // Fuzzy similarity (Level 3 ke liye)
+    private static HashSet<string> IdentitySet(HashSet<string> w) =>
+        w.Where(IsIdentityToken).ToHashSet();
+
+    /// <summary>
+    /// Qualifiers are checked as hard constraints before any word overlap is
+    /// considered. Treating them as ordinary words let a high enough overlap
+    /// outvote them: "Pixel 10 PTA" and "Pixel 10 non-PTA" share four words
+    /// out of five.
+    /// </summary>
     private static double Similarity(string a, string b)
     {
         var wa = a.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
         var wb = b.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
         if (wa.Count == 0 || wb.Count == 0) return 0;
 
-        var numsA = wa.Where(w => w.Any(char.IsDigit)).ToHashSet();
-        var numsB = wb.Where(w => w.Any(char.IsDigit)).ToHashSet();
-        if (numsA.Count > 0 && numsB.Count > 0 && !numsA.Overlaps(numsB)) return 0;
+        // Storage: different sizes are different products, different prices.
+        var capA = wa.FirstOrDefault(w => w.StartsWith("cap"));
+        var capB = wb.FirstOrDefault(w => w.StartsWith("cap"));
+        if (capA != null && capB != null && capA != capB) return 0;
 
-        return (double)wa.Intersect(wb).Count() / Math.Min(wa.Count, wb.Count);
+        // PTA status.
+        var ptaA = wa.Contains("pta") ? "pta" : wa.Contains("nonpta") ? "nonpta" : null;
+        var ptaB = wb.Contains("pta") ? "pta" : wb.Contains("nonpta") ? "nonpta" : null;
+        if (ptaA != null && ptaB != null && ptaA != ptaB) return 0;
+
+        // Model designators must match exactly, not merely overlap — "10" and
+        // "10a" overlapped through their shared capacity token before this.
+        var idA = IdentitySet(wa);
+        var idB = IdentitySet(wb);
+        if (idA.Count > 0 && idB.Count > 0 && !idA.SetEquals(idB)) return 0;
+
+        // Dividing by the smaller set scored a short title that is a subset of
+        // a longer one as a perfect match.
+        return (double)wa.Intersect(wb).Count() / Math.Max(wa.Count, wb.Count);
     }
 
     public async Task RunDeduplicationAsync()
@@ -130,13 +221,13 @@ public class DeduplicationService
             }
 
             var listings = await db.StoreListings
-                .Select(l => new { l.Id, l.StoreId, l.RawTitle })
+                .Select(l => new { l.Id, l.StoreId, l.RawTitle, l.Price })
                 .ToListAsync();
 
             _logger.LogInformation("{Count} listings...", listings.Count);
 
             var items = listings
-                .Select(l => new { l.Id, l.StoreId, Key = BuildMatchKey(l.RawTitle) })
+                .Select(l => new { l.Id, l.StoreId, l.Price, Key = BuildMatchKey(l.RawTitle) })
                 .Where(x => !string.IsNullOrWhiteSpace(x.Key) && x.Key.Length >= 3)
                 .ToList();
 
@@ -149,13 +240,38 @@ public class DeduplicationService
                 .Where(g => g.Select(i => i.StoreId).Distinct().Count() >= 2)
                 .ToList();
 
+            int priceSplit = 0;
             foreach (var g in exactGroups)
             {
-                var ids = g.Select(x => x.Id).ToList();
-                results.Add((ids, 100m, "matched"));
-                foreach (var id in ids) usedIds.Add(id);
+                // An identical key can still cover different products, so split
+                // the group at any price gap wider than the ratio allows.
+                var sorted = g.OrderBy(x => x.Price).ToList();
+                var runs = new List<List<long>>();
+                var run = new List<(long Id, decimal Price)>();
+
+                foreach (var x in sorted)
+                {
+                    if (run.Count > 0 && (x.Price <= 0 || run[0].Price <= 0 ||
+                                          x.Price / run[0].Price > MaxPriceRatio))
+                    {
+                        runs.Add(run.Select(r => r.Id).ToList());
+                        run = new List<(long, decimal)>();
+                    }
+                    run.Add((x.Id, x.Price));
+                }
+                if (run.Count > 0) runs.Add(run.Select(r => r.Id).ToList());
+                if (runs.Count > 1) priceSplit++;
+
+                foreach (var ids in runs)
+                {
+                    if (ids.Count < 2) continue;
+                    var storeCount = g.Where(x => ids.Contains(x.Id)).Select(x => x.StoreId).Distinct().Count();
+                    if (storeCount < 2) continue;
+                    results.Add((ids, 100m, "matched"));
+                    foreach (var id in ids) usedIds.Add(id);
+                }
             }
-            _logger.LogInformation("Level 1 (exact brand+model): {C} groups", exactGroups.Count);
+            _logger.LogInformation("Level 1 (exact brand+model): {C} keys, {P} split on price", exactGroups.Count, priceSplit);
 
             // LEVEL 2: FUZZY (bache huon par) → needs_review, confidence 70
             var remaining = items
@@ -179,7 +295,16 @@ public class DeduplicationService
                     for (int j = i + 1; j < bi.Count; j++)
                     {
                         if (used.Contains(j)) continue;
-                        if (Similarity(bi[i].Key, bi[j].Key) >= 0.75)
+                        // Checked against every member, not just the seed, so a
+                        // chain of near-matches cannot drift far from where it started.
+                        var pricesOk = cluster.All(idx =>
+                        {
+                            var lo = Math.Min(bi[idx].Price, bi[j].Price);
+                            var hi = Math.Max(bi[idx].Price, bi[j].Price);
+                            return lo > 0 && hi / lo <= MaxPriceRatio;
+                        });
+
+                        if (pricesOk && Similarity(bi[i].Key, bi[j].Key) >= 0.75)
                         {
                             cluster.Add(j); used.Add(j);
                         }
@@ -195,12 +320,46 @@ public class DeduplicationService
             }
             _logger.LogInformation("Level 2 (fuzzy): {C} groups (needs_review)", fuzzyCount);
 
+            // Remember what admins have already said is not a match, before
+            // the wipe below throws those rows away.
+            var rejectedIdSets = await db.MatchGroups
+                .Where(g => g.Status == Pricely.Core.Entities.MatchStatus.Rejected)
+                .Select(g => g.Listings.Select(l => l.StoreListingId).ToList())
+                .ToListAsync();
+
+            var rejectedPairs = new HashSet<(long, long)>();
+            foreach (var rids in rejectedIdSets)
+                for (int a = 0; a < rids.Count; a++)
+                    for (int b = a + 1; b < rids.Count; b++)
+                        rejectedPairs.Add(rids[a] < rids[b] ? (rids[a], rids[b]) : (rids[b], rids[a]));
+
+            _logger.LogInformation("{P} rejected pairs remembered.", rejectedPairs.Count);
+
             // SAVE
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM match_group_listings;");
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM match_groups;");
+            await db.Database.ExecuteSqlRawAsync(
+                @"DELETE FROM match_group_listings WHERE match_group_id IN (
+                      SELECT id FROM match_groups WHERE status::text <> 'rejected');");
+            await db.Database.ExecuteSqlRawAsync(
+                "DELETE FROM match_groups WHERE status::text <> 'rejected';");
+
+            // An admin rejecting a group means "these are not the same thing".
+            // Rebuilding it would put the same wrong pairing back in the queue.
+            bool HasRejectedPair(List<long> ids)
+            {
+                for (int a = 0; a < ids.Count; a++)
+                    for (int b = a + 1; b < ids.Count; b++)
+                    {
+                        var key = ids[a] < ids[b] ? (ids[a], ids[b]) : (ids[b], ids[a]);
+                        if (rejectedPairs.Contains(key)) return true;
+                    }
+                return false;
+            }
+            int skipped = 0;
 
             foreach (var (ids, conf, status) in results)
             {
+                if (HasRejectedPair(ids)) { skipped++; continue; }
+
                 var mg = new Pricely.Core.Entities.MatchGroup
                 {
                     Confidence = conf,
@@ -213,8 +372,8 @@ public class DeduplicationService
 
             await db.SaveChangesAsync();
 
-            _logger.LogInformation("Mukammal. {T} groups ({M} matched, {R} needs_review)",
-                results.Count, exactGroups.Count, fuzzyCount);
+            _logger.LogInformation("Mukammal. {T} groups ({M} matched, {R} needs_review), {S} rejected pairs skipped.",
+                results.Count - skipped, exactGroups.Count, fuzzyCount, skipped);
         }
         catch (Exception ex)
         {

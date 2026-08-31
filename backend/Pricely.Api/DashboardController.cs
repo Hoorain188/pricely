@@ -128,7 +128,10 @@ public class DashboardController : ControllerBase
                 new KpiValue(totalUsers,   Growth(usersWeekAgo,    totalUsers)),
                 new KpiValue(products,     Growth(productsWeekAgo, products)),
                 new KpiValue(activeAlerts, Growth(alertsWeekAgo,   activeAlerts)),
-                ScrapersHealthy: scrapers.Count(s => s.Status == "ok"),
+                // A run in progress is not a failure. Counting only "ok" made
+                // the card read "2 failing" the moment anyone pressed Re-run,
+                // while every row underneath still showed OK.
+                ScrapersHealthy: scrapers.Count(s => s.Status is "ok" or "running"),
                 ScrapersTotal:   scrapers.Count),
             Scrapers:     scrapers,
             TopSearches:  topSearches,

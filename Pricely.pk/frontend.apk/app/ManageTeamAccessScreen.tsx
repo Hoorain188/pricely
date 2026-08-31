@@ -113,6 +113,24 @@ export default function ManageTeamAccessScreen({ navigation }: ManageTeamAccessS
     }
   };
 
+  // An invite has no user behind it until the code is redeemed, so there is
+  // nothing to approve — it can only be cancelled.
+  const handleRevokeInvite = async (req: ApiTeamRequest) => {
+    setBusyId(req.id);
+    setActionError(null);
+    try {
+      await api.revokeInvite(req.id);
+      setRequests((prev) => prev.filter((r) => r.id !== req.id));
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Could not revoke the invite.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const pendingRequests = requests.filter((r) => r.type === 'self_signup');
+  const pendingInvites = requests.filter((r) => r.type === 'invite');
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -156,11 +174,11 @@ export default function ManageTeamAccessScreen({ navigation }: ManageTeamAccessS
 
       {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
 
-      {requests.length > 0 && (
+      {pendingRequests.length > 0 && (
         <>
           <Text style={styles.sectionTitle}>Pending requests</Text>
           <View style={styles.list}>
-            {requests.map((r) => (
+            {pendingRequests.map((r) => (
               <View key={r.id} style={styles.requestRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowName}>{r.name ?? r.email}</Text>
@@ -185,6 +203,35 @@ export default function ManageTeamAccessScreen({ navigation }: ManageTeamAccessS
                       <X size={15} color={colors.danger} strokeWidth={3} />
                     </TouchableOpacity>
                   </View>
+                )}
+              </View>
+            ))}
+          </View>
+        </>
+      )}
+
+      {pendingInvites.length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>Pending invites</Text>
+          <View style={styles.list}>
+            {pendingInvites.map((r) => (
+              <View key={r.id} style={styles.requestRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowName}>{r.email}</Text>
+                  <Text style={styles.rowMeta}>
+                    invited as {r.requestedRole}
+                    {r.expiresAt
+                      ? ` · code expires ${new Date(r.expiresAt).toLocaleDateString()}`
+                      : ''}
+                  </Text>
+                </View>
+                {canManage && (
+                  <TouchableOpacity
+                    disabled={busyId === r.id}
+                    onPress={() => void handleRevokeInvite(r)}
+                  >
+                    <Text style={styles.revokeLink}>Revoke</Text>
+                  </TouchableOpacity>
                 )}
               </View>
             ))}
@@ -285,6 +332,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   requestActions: { flexDirection: 'row', gap: 8 },
+  revokeLink: { fontSize: 12, fontFamily: fonts.button, color: colors.danger },
   approveBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.accentSolid, alignItems: 'center', justifyContent: 'center' },
   rejectBtn: { width: 32, height: 32, borderRadius: 16, borderWidth: 1.3, borderColor: 'rgba(220,38,38,0.3)', alignItems: 'center', justifyContent: 'center' },
   card: {

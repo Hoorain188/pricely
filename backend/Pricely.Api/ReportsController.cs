@@ -5,6 +5,7 @@ using Pricely.Api.Authorization;
 using Pricely.Core.Dtos;
 using Pricely.Core.Entities;
 using Pricely.Infrastructure;
+using Pricely.Api.Models;
 
 namespace Pricely.Api.Controllers;
 
@@ -226,20 +227,48 @@ public class ReportsController : ControllerBase
             ? new System.Text.Json.JsonElement()
             : System.Text.Json.JsonDocument.Parse(a.Details).RootElement;
 
-        string Get(string key) =>
-            d.ValueKind == System.Text.Json.JsonValueKind.Object &&
-            d.TryGetProperty(key, out var v) ? v.ToString() : "";
+        // The details blob is written by anonymous objects, so a property
+        // called Email serialises as "Email" while one written as
+        // role = ... serialises as "role". Matching case-insensitively means
+        // callers do not have to know which, and old rows still read properly.
+        string Get(params string[] keys)
+        {
+            if (d.ValueKind != System.Text.Json.JsonValueKind.Object) return "";
+            foreach (var key in keys)
+                foreach (var prop in d.EnumerateObject())
+                    if (string.Equals(prop.Name, key, StringComparison.OrdinalIgnoreCase))
+                        return prop.Value.ToString();
+            return "";
+        }
 
         return a.Action switch
         {
-            "duplicates.merged"   => $"Merged \"{Get("productName")}\" duplicate group".Replace("\"\" ", ""),
+            "duplicates.merged"   => $"Merged \"{Get("productName", "name")}\" duplicate group".Replace("\"\" ", "").Replace("\"\"", "").Trim(),
             "duplicates.rejected" => "Marked a duplicate group as not a match",
-            "duplicates.split"    => $"Split \"{Get("productName")}\" back into separate listings",
-            "team.invited"        => $"Invited {Get("email")} as {Get("role")}",
-            "team.role_changed"   => $"Changed {Get("name")}'s role to {Get("to")}",
-            "team.removed"        => $"Removed {Get("name")} from the team",
+            "duplicates.split"    => $"Split \"{Get("productName", "name")}\" back into separate listings",
+
+            // These are written by ActivityActions, which uses underscores.
+            // The dotted names this switch used to carry never matched a
+            // single row, so every team action fell through to the raw key.
+            ActivityActions.SendInvite          => $"Invited {Get("email")} as {Get("role")}",
+            ActivityActions.RevokeInvite        => $"Revoked the invite for {Get("email")}",
+            ActivityActions.AcceptInvite        => $"{Get("email")} joined the team as {Get("role")}",
+            ActivityActions.ApproveTeamRequest  => $"Approved {Get("email")} for {Get("role")} access",
+            ActivityActions.RejectTeamRequest   => $"Rejected the access request from {Get("email")}",
+            ActivityActions.ChangeRole          => $"Changed {Get("name", "email")}'s role to {Get("to")}",
+            ActivityActions.RemoveMember        => $"Removed {Get("name", "email")} from the team",
             "scraper.rerun"       => $"Re-ran the {Get("storeName")} scraper",
-            _                     => a.Action
+
+            // A new action should still read as English rather than leaking
+            // its key: "some_new_action" -> "Some new action".
+            _ => Humanise(a.Action)
         };
+    }
+
+    private static string Humanise(string action)
+    {
+        var words = action.Replace('.', ' ').Replace('_', ' ').Trim();
+        return words.Length == 0 ? "Unknown action"
+             : char.ToUpper(words[0]) + words[1..];
     }
 }

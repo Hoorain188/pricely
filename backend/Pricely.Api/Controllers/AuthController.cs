@@ -104,6 +104,15 @@ public class AuthController : ControllerBase
         return NoContent();
     }
 
+    [Authorize]
+    [HttpPost("change-password")]
+    [EnableRateLimiting(RateLimitPolicies.Sensitive)]
+    public async Task<ActionResult<AuthStatusResponse>> ChangePassword(
+        ChangePasswordRequest req,
+        [FromQuery] string? currentRefreshToken,
+        CancellationToken ct)
+        => Ok(await _auth.ChangePasswordAsync(CurrentUserId, req, currentRefreshToken, ct));
+
     private long CurrentUserId =>
         long.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)
             ?? throw new AuthException("unauthorized", "Not signed in.", StatusCodes.Status401Unauthorized));

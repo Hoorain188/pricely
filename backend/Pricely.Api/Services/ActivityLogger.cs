@@ -10,7 +10,7 @@ namespace Pricely.Api.Services;
 /// </summary>
 public interface IActivityLogger
 {
-    void Record(string action, string? targetType = null, long? targetId = null, object? details = null);
+    void Record(string action, string? targetType = null, long? targetId = null, object? details = null, long? actorId = null);
 }
 
 public class ActivityLogger : IActivityLogger
@@ -24,13 +24,15 @@ public class ActivityLogger : IActivityLogger
         _me = me;
     }
 
-    public void Record(string action, string? targetType = null, long? targetId = null, object? details = null)
+    public void Record(string action, string? targetType = null, long? targetId = null, object? details = null, long? actorId = null)
     {
         // Caller is responsible for SaveChangesAsync, so the log entry commits
         // in the same transaction as the thing it describes.
         _db.ActivityLog.Add(new ActivityLogEntry
         {
-            ActorId    = _me.Id,
+            // Accepting an invite happens while signed out, so there is no
+            // current user to credit — the caller names the actor instead.
+            ActorId    = actorId ?? _me.Id,
             Action     = action,
             TargetType = targetType,
             TargetId   = targetId,

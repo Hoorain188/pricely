@@ -42,5 +42,5 @@ services:
       # Worth collapsing into a direct call to the sync service — the HTTP hop
       # buys nothing now that both ends are one process.
       - key: ScraperApi__BaseUrl
-        value: https://pricely-api-krep.onrender.com
+        value: https://pricely-api-xghc.onrender.com
 

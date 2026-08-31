@@ -10,8 +10,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://pricely-api-krep.onrender.com",
-        "EXPO_PUBLIC_SCRAPER_API_URL": "https://pricely-api-krep.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://pricely-api-xghc.onrender.com",
+        "EXPO_PUBLIC_SCRAPER_API_URL": "https://pricely-api-xghc.onrender.com"
       }
     },
     "lan": {
@@ -29,8 +29,8 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://pricely-api-krep.onrender.com",
-        "EXPO_PUBLIC_SCRAPER_API_URL": "https://pricely-api-krep.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://pricely-api-xghc.onrender.com",
+        "EXPO_PUBLIC_SCRAPER_API_URL": "https://pricely-api-xghc.onrender.com"
       }
     }
   },

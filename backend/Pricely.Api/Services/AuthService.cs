@@ -296,6 +296,43 @@ public class AuthService
         return new AuthStatusResponse("password_reset", "Password updated. You can sign in with it now.");
     }
 
+    /// <summary>
+    /// Changing a password from inside the app. Unlike the reset flow there is
+    /// no emailed code, so the current password is what proves it is really them.
+    /// </summary>
+    public async Task<AuthStatusResponse> ChangePasswordAsync(
+        long userId, ChangePasswordRequest req, string? currentRefreshToken, CancellationToken ct)
+    {
+        var user = await _db.Users
+            .Include(u => u.Sessions)
+            .FirstOrDefaultAsync(u => u.Id == userId, ct)
+            ?? throw new AuthException("not_found", "Account not found.", StatusCodes.Status404NotFound);
+
+        if (!VerifyPassword(req.CurrentPassword, user.PasswordHash, user.Email))
+            throw new AuthException("wrong_password", "That is not your current password.");
+
+        if (VerifyPassword(req.NewPassword, user.PasswordHash, user.Email))
+            throw new AuthException("same_password", "The new password must be different from the current one.");
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
+        user.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // Every other device is signed out — a password change is worthless if
+        // whoever had the old one keeps a live session. This device is kept so
+        // the person is not thrown out of the screen they just used.
+        var keepHash = string.IsNullOrWhiteSpace(currentRefreshToken)
+            ? null : _tokens.HashRefreshToken(currentRefreshToken);
+        var now = DateTimeOffset.UtcNow;
+        foreach (var session in user.Sessions.Where(s => s.RevokedAt is null))
+            if (keepHash is null || session.RefreshTokenHash != keepHash)
+                session.RevokedAt = now;
+
+        await _db.SaveChangesAsync(ct);
+
+        return new AuthStatusResponse("password_changed",
+            "Password updated. Your other devices have been signed out.");
+    }
+
     // ── Sessions ─────────────────────────────────────────────────────────
 
     public async Task<AuthResponse> RefreshAsync(RefreshRequest req, CancellationToken ct)
@@ -519,7 +556,7 @@ public class AuthService
         invite.InviteToken = null;   // single use
 
         _activity.Record(ActivityActions.AcceptInvite, "team_request", invite.Id,
-            new { invite.Email, role = user.Role.ToWire() });
+            new { invite.Email, role = user.Role.ToWire() }, actorId: user.Id);
 
         await _db.SaveChangesAsync(ct);
 

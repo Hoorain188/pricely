@@ -84,10 +84,20 @@ public class DarazSyncService : IStoreConnector
 
             var daraz = await db.Stores.FirstOrDefaultAsync(s => s.Slug == "daraz");
             if (daraz is null)
+
+
             {
                 _logger.LogWarning("Daraz store DB mein nahi. Pehle stores table mein add karein.");
                 return;
             }
+
+            // Every Daraz listing in one query. Looking each product up
+            // individually meant ~9,000 round trips to a cloud database, which
+            // is where the time went — the same change took Telemart from 47
+            // minutes to 6 seconds.
+            var existingByUrl = await db.StoreListings
+                .Where(l => l.StoreId == daraz.Id && l.ProductUrl != null)
+                .ToDictionaryAsync(l => l.ProductUrl!);
 
             var http = _httpFactory.CreateClient();
             http.DefaultRequestHeaders.Add("User-Agent",
@@ -164,8 +174,7 @@ public class DarazSyncService : IStoreConnector
 
                         var mappedCategory = CategoryMapper.Map(name, null, category);
 
-                        var existing = await db.StoreListings
-                            .FirstOrDefaultAsync(l => l.StoreId == daraz.Id && l.ProductUrl == productUrl);
+                        existingByUrl.TryGetValue(productUrl, out var existing);
 
                         if (existing is null)
                         {

@@ -68,7 +68,12 @@ public record TeamRequestDto(
     string Email,
     string? Name,
     string RequestedRole,
-    DateTimeOffset RequestedAt);
+    DateTimeOffset RequestedAt,
+    // An invite and a self-signup request need different actions: one is
+    // revoked, the other approved. Without Type the screen showed both as
+    // requests, and approving an invite 404s because it has no user yet.
+    string Type,
+    DateTimeOffset? ExpiresAt);
 
 public record NotificationPrefsDto(
     bool NewReports,

@@ -4,6 +4,7 @@ import AdminTabs from './AdminTabs';
 import ManageTeamAccessScreen from './ManageTeamAccessScreen';
 import InviteMemberScreen from './InviteMemberScreen';
 import ActiveSessionsScreen from './ActiveSessionsScreen';
+import ChangePasswordScreen from './ChangePasswordScreen';
 import ReportsScreen from './ReportsScreen';
 import StoreListingsScreen from './StoreListingsScreen';
 import ActivityLogScreen from './ActivityLogScreen';
@@ -17,6 +18,7 @@ export type AdminStackParamList = {
   AdminTabs: undefined;
   ManageTeamAccess: undefined;
   InviteMember: undefined;
+  ChangePassword: undefined;
   ActiveSessions: undefined;
   Reports: undefined;
   StoreListings: { store: string };
@@ -33,6 +35,7 @@ export default function AdminNavigator() {
       <Stack.Screen name="AdminTabs" component={AdminTabs} />
       <Stack.Screen name="ManageTeamAccess" component={ManageTeamAccessScreen} />
       <Stack.Screen name="InviteMember" component={InviteMemberScreen} />
+      <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
       <Stack.Screen name="ActiveSessions" component={ActiveSessionsScreen} />
       <Stack.Screen name="Reports" component={ReportsScreen} />
       <Stack.Screen name="StoreListings" component={StoreListingsScreen} />

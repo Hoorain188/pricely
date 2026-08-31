@@ -6,6 +6,7 @@ import LoginForm, { LoginFormRef } from './LoginForm';
 import SignupForm, { SignupFormRef } from './SignupForm';
 import ForgotPasswordForm, { ForgotPasswordFormRef } from './ForgotPasswordForm';
 import VerifyCodeForm, { VerifyCodeFormRef } from './VerifyCodeForm';
+import AcceptInviteForm, { AcceptInviteFormRef } from './AcceptInviteForm';
 import BrandMark from '../components/BrandMark';
 import FloatingLabelInput from '../components/FloatingLabelInput';
 import GradientButton from '../components/GradientButton';
@@ -20,7 +21,7 @@ interface AuthScreenProps {
 }
 
 type Role = 'admin' | 'user' | 'support' | 'readonly';
-type Mode = 'login' | 'signup' | 'forgot' | 'verify' | 'resetPassword' | 'pendingApproval' | 'signupBlocked';
+type Mode = 'login' | 'signup' | 'forgot' | 'verify' | 'resetPassword' | 'pendingApproval' | 'signupBlocked' | 'acceptInvite';
 
 const ROLES: { key: Role; title: string; subtitle: string; icon: LucideIcon }[] = [
   { key: 'admin', title: 'ADMIN', subtitle: 'Manage store data', icon: Shield },
@@ -47,6 +48,7 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const signupRef = useRef<SignupFormRef>(null);
   const forgotRef = useRef<ForgotPasswordFormRef>(null);
   const verifyRef = useRef<VerifyCodeFormRef>(null);
+  const acceptInviteRef = useRef<AcceptInviteFormRef>(null);
   const { setAuth } = useAuthStore();
 
   const refFor = (m: Mode) => {
@@ -57,6 +59,8 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         return signupRef;
       case 'forgot':
         return forgotRef;
+      case 'acceptInvite':
+        return acceptInviteRef;
       case 'verify':
         return verifyRef;
       default:
@@ -121,6 +125,11 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               onAuthenticated={onAuthenticated}
             />
           )}
+          {mode === 'login' && (
+            <TouchableOpacity onPress={() => goTo('acceptInvite')} style={styles.inviteLinkRow}>
+              <Text style={styles.inviteLink}>Have an invite code?</Text>
+            </TouchableOpacity>
+          )}
           {mode === 'signup' && (
             <SignupForm
               ref={signupRef}
@@ -144,6 +153,17 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
                 setVerifyEmail(email);
                 setVerifyFlow('reset');
                 goTo('verify');
+              }}
+            />
+          )}
+          {mode === 'acceptInvite' && (
+            <AcceptInviteForm
+              ref={acceptInviteRef}
+              onBack={() => goTo('login')}
+              onSwitchToLogin={() => goTo('login')}
+              onAccepted={async (result) => {
+                await setAuth(result.user, result.accessToken, result.refreshToken);
+                onAuthenticated?.();
               }}
             />
           )}
@@ -304,6 +324,8 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 }
 
 const styles = StyleSheet.create({
+  inviteLinkRow: { marginTop: 14, alignItems: 'center' },
+  inviteLink: { color: colors.accentSolid, fontFamily: fonts.button, fontSize: 13 },
   root: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
   content: { paddingHorizontal: 24, paddingTop: 32, paddingBottom: 48 },

@@ -49,6 +49,11 @@ public record ResetPasswordRequest(
     [Required, RegularExpression(@"^\d{6}$", ErrorMessage = "Code must be 6 digits.")] string Code,
     [Required, StringLength(100, MinimumLength = 8)] string NewPassword);
 
+/// <summary>Changing a password while signed in, so no emailed code.</summary>
+public record ChangePasswordRequest(
+    [Required] string CurrentPassword,
+    [Required, StringLength(100, MinimumLength = 8)] string NewPassword);
+
 public record RefreshRequest(
     [Required] string RefreshToken);
 

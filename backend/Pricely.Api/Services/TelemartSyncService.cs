@@ -80,6 +80,23 @@ public class TelemartSyncService : IStoreConnector
                     break;
                 }
 
+                // One query per page instead of one per product. Looking each
+                // listing up individually meant ~3,300 round trips to a cloud
+                // database, which is where the 35 minutes went — not the HTTP.
+                var pageUrls = new List<string>();
+                foreach (var p in products)
+                    if (p.TryGetProperty("handle", out var hh))
+                    {
+                        var hv = hh.GetString();
+                        if (!string.IsNullOrWhiteSpace(hv))
+                            pageUrls.Add($"https://www.telemart.pk/products/{hv}");
+                    }
+
+                var existingByUrl = await RetryAsync(() =>
+                    db.StoreListings
+                      .Where(l => l.StoreId == telemart.Id && pageUrls.Contains(l.ProductUrl))
+                      .ToDictionaryAsync(l => l.ProductUrl!));
+
                 foreach (var p in products)
                 {
                     try
@@ -107,8 +124,7 @@ public class TelemartSyncService : IStoreConnector
                             continue;
                         }
 
-                        var existing = await RetryAsync(() =>
-                            db.StoreListings.FirstOrDefaultAsync(l => l.StoreId == telemart.Id && l.ProductUrl == productUrl));
+                        existingByUrl.TryGetValue(productUrl, out var existing);
 
                         if (existing is null)
                         {

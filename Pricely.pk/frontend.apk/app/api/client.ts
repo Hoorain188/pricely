@@ -184,6 +184,12 @@ export interface ApiTeamRequest {
   name: string | null;
   requestedRole: Role;
   requestedAt: string;
+  /** "invite" was sent by an admin; "self_signup" was asked for. They are
+   *  revoked and approved respectively — approving an invite 404s, since
+   *  no user exists for it until the code is redeemed. */
+  type: 'invite' | 'self_signup';
+  /** Invites only. */
+  expiresAt: string | null;
 }
 
 export interface NotificationPrefs {
@@ -240,7 +246,7 @@ export const api = {
   dashboard: () => request<DashboardResponse>('/admin/dashboard'),
 
   rerunScraper: (storeId: number) =>
-    request<{ jobId: string }>(`/admin/scrapers/${storeId}/run`, { method: 'POST' }),
+    request<{ store: string }>(`/admin/scrapers/${storeId}/run`, { method: 'POST' }),
 
   duplicates: (status: 'pending' | 'merged', search?: string) =>
     request<DuplicatesResponse>(
@@ -290,6 +296,9 @@ export const api = {
 
   rejectRequest: (requestId: number) =>
     request<void>(`/admin/team/requests/${requestId}/reject`, { method: 'POST' }),
+
+  revokeInvite: (requestId: number) =>
+    request<void>(`/admin/team/invites/${requestId}`, { method: 'DELETE' }),
 
   reports: (period: Period) =>
     request<ReportsResponse>(`/admin/reports?period=${period}`),

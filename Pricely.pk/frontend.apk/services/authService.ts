@@ -207,6 +207,26 @@ export const acceptInvite = (params: { token: string; name: string; password: st
     body: JSON.stringify(params),
   });
 
+/**
+ * Changing a password signs out every other device. The current refresh token
+ * is sent so this one survives — otherwise the person is thrown out of the
+ * screen they just used.
+ */
+export const changePassword = (
+  token: string,
+  params: { currentPassword: string; newPassword: string },
+  currentRefreshToken?: string,
+) => {
+  const query = currentRefreshToken
+    ? `?currentRefreshToken=${encodeURIComponent(currentRefreshToken)}`
+    : '';
+  return request<AuthStatusResponse>(`/api/auth/change-password${query}`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+    ...authed(token),
+  });
+};
+
 // ── Session management (needs a token) ──────────────────────────────────
 
 export const getSessions = (token: string, currentRefreshToken?: string) => {

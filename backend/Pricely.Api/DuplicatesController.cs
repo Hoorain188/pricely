@@ -73,7 +73,9 @@ public class DuplicatesController : ControllerBase
                 // The group has no title of its own; use the longest listing
                 // title, which is usually the most complete one.
                 listings.OrderByDescending(sl => sl.RawTitle.Length).FirstOrDefault()?.RawTitle ?? "Untitled",
-                (int)Math.Round(g.Confidence * 100),
+                // Confidence is stored as a percentage (70.00, 100.00), not a
+                // 0-1 fraction — multiplying by 100 here rendered "7000% MATCH".
+                (int)Math.Round(g.Confidence),
                 // Null until merged. The Split button needs this — passing a
                 // listing id instead silently splits the wrong thing.
                 listings.FirstOrDefault(sl => sl.ProductId != null)?.ProductId,
@@ -83,8 +85,10 @@ public class DuplicatesController : ControllerBase
                     sl.Store.Name,
                     sl.Price,
                     "PKR",
-                    // Pre-tick everything except the weakest match, mirroring the mock.
-                    PreSelected: i < listings.Count - 1 || listings.Count == 1)).ToList());
+                    // Tick everything. Leaving the last one out came from the
+                    // mock, but merging a single listing produces no comparison,
+                    // so it just made the admin re-tick a box 194 times.
+                    PreSelected: true)).ToList());
         }).ToList();
 
         return Ok(new DuplicatesResponse(

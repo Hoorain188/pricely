@@ -169,7 +169,7 @@ public class TeamService
 
         // Raw token goes in the email; only its hash is stored, so reading the
         // database gives you nothing you could accept an invite with.
-        var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48))
+        var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16))
             .Replace("+", "-").Replace("/", "_").TrimEnd('=');
 
         var request = new TeamRequest

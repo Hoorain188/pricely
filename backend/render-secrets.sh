@@ -28,9 +28,15 @@ fi
 cat <<EOF
 
 ──────────────────────────────────────────────────────────────
- Service: pricely-api        (auth + admin back office)
+ Service: pricely-api
+ Everything is one service now — auth, admin, scrapers, search.
+ Paste each name and value as a separate variable.
 ──────────────────────────────────────────────────────────────
+
 ConnectionStrings__Default
+$CONN
+
+ConnectionStrings__DefaultConnection
 $CONN
 
 Jwt__SigningKey
@@ -43,12 +49,13 @@ Email__SmtpPassword
 $SMTP
 
 ──────────────────────────────────────────────────────────────
- Service: pricely-scraper    (browse, search, scrapers)
-──────────────────────────────────────────────────────────────
-ConnectionStrings__DefaultConnection
-$CONN
+The first two hold the same value under different names: the
+scrapers still read the key they used as a separate project.
 
-──────────────────────────────────────────────────────────────
-Note the double underscores: that is how .NET maps a flat
-environment variable onto nested configuration.
+Double underscores are not a typo — that is how .NET maps a
+flat environment variable onto nested configuration, so
+ConnectionStrings__Default means ConnectionStrings:Default.
+
+ScraperApi__BaseUrl is not listed: render.yaml sets it itself,
+so Render fills it in without being asked.
 EOF

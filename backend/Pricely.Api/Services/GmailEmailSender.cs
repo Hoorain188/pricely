@@ -88,6 +88,15 @@ public class GmailEmailSender : IEmailSender
             // leave the SMTP session open to interception.
             client.CheckCertificateRevocation = false;
 
+            // Hosts commonly block outbound SMTP, and a blocked port does not
+            // refuse the connection — it drops the packets, so ConnectAsync sits
+            // there. On Render that took just over two minutes before failing,
+            // and signup waits for this, so the caller saw a request that hung
+            // and then returned 500. Fifteen seconds is far longer than a
+            // working handshake needs and turns "blocked" into a fast, legible
+            // failure instead of a timeout somewhere further up.
+            client.Timeout = 15_000;
+
             // Gmail on 587 uses STARTTLS (upgrade a plain connection to TLS),
             // not implicit SSL — SslOnConnect here would hang.
             await client.ConnectAsync(_options.SmtpHost, _options.SmtpPort, SecureSocketOptions.StartTls, ct);

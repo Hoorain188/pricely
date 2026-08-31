@@ -12,7 +12,7 @@ import Constants from 'expo-constants';
  * Set EXPO_PUBLIC_API_URL to override — that's what to point at the
  * deployed URL once the API is hosted somewhere.
  */
-const DEV_PORT = 5099;
+const DEV_PORT = 5059;
 
 function resolveBaseUrl(): string {
   const override = process.env.EXPO_PUBLIC_API_URL;

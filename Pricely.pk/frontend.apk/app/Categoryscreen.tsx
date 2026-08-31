@@ -41,9 +41,11 @@ import {
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   BackHandler,
   Dimensions,
+  FlatList,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -216,26 +218,18 @@ export default function CategoryScreen() {
   const [activeCategory, setActiveCategory] = useState(initialCategory);
   const { loading } = useSubcategories(activeCategory, storeFilter);
 
-  // Refresh: seed badalne par browse naya (rotated) data deta hai
-  const [seed, setSeed] = useState(0);
+  // Refresh & Pagination state
+  const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1000000));
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   // Transition loading logic to eliminate flash of empty grids
-  const [localLoading, setLocalLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setLocalLoading(true);
-    setApiError(null);
-  }, [activeCategory]);
-
-  useEffect(() => {
-    if (!loading) {
-      setLocalLoading(false);
-    }
-  }, [loading]);
-
-  const isPageLoading = loading || localLoading;
+  const isPageLoading = fetching;
 
   const [searchValue, setSearchValue] = useState('');
   const [filterVisible, setFilterVisible] = useState(false);
@@ -317,14 +311,19 @@ export default function CategoryScreen() {
 
   useEffect(() => {
     let alive = true;
-    // Seedha category key hi DB query hai (dono stores same slug)
     const queryTerm = activeCategory;
 
+    setFetching(true);
+    setApiProducts([]);
     setApiError(null);
-    fetchBrowseProducts(queryTerm, storeFilter, seed)
-      .then((apiResults) => {
-        if (alive && apiResults && apiResults.length > 0) {
-          setApiProducts(apiResults.map((item) => ({
+    setPage(1);
+    setHasMore(true);
+
+    fetchBrowseProducts(queryTerm, storeFilter, seed, 1, 60)
+      .then((res) => {
+        if (alive && res && Array.isArray(res.results) && res.results.length > 0) {
+          setApiProducts(res.results.map((item) => ({
+            id: item.id,
             name: item.title,
             price: formatPrice(item.price),
             pictureTag: item.title,
@@ -333,29 +332,35 @@ export default function CategoryScreen() {
             url: item.url,
             store: item.store,
             currency: item.currency,
+            hasComparison: item.hasComparison,
           })));
+          setHasMore(res.hasMore);
         } else if (alive) {
           searchProducts(queryTerm, storeFilter)
-            .then((res: SubcategoryProduct[]) => {
-              if (alive) setApiProducts(res && res.length > 0 ? res : []);
+            .then((searchRes: SubcategoryProduct[]) => {
+              if (alive) {
+                setApiProducts(searchRes && searchRes.length > 0 ? searchRes : []);
+                setHasMore(false);
+              }
             })
-            .catch(() => { if (alive) setApiProducts([]); });
+            .catch(() => { if (alive) { setApiProducts([]); setHasMore(false); } });
         }
       })
       .catch((err: any) => {
         if (alive) {
           setApiError(err?.message || "Can't reach server — check connection");
           searchProducts(queryTerm, storeFilter)
-            .then((res: SubcategoryProduct[]) => {
-              if (alive && res && res.length > 0) {
-                setApiProducts(res);
+            .then((searchRes: SubcategoryProduct[]) => {
+              if (alive && searchRes && searchRes.length > 0) {
+                setApiProducts(searchRes);
                 setApiError(null);
+                setHasMore(false);
               }
             })
             .catch(() => { });
         }
       })
-      .finally(() => { if (alive) setRefreshing(false); });
+      .finally(() => { if (alive) { setFetching(false); setRefreshing(false); } });
     return () => {
       alive = false;
     };
@@ -363,7 +368,49 @@ export default function CategoryScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    setSeed((s) => s + 1); // seed badla -> browse rotated/naya data dega
+    setSeed(Math.floor(Math.random() * 1000000));
+  };
+
+  const handleLoadMore = () => {
+    if (!hasMore || loadingMore || fetching || refreshing) return;
+
+    setLoadingMore(true);
+    const nextPage = page + 1;
+
+    fetchBrowseProducts(activeCategory, storeFilter, seed, nextPage, 60)
+      .then((res) => {
+        if (res && Array.isArray(res.results) && res.results.length > 0) {
+          const newProducts: SubcategoryProduct[] = res.results.map((item) => ({
+            id: item.id,
+            name: item.title,
+            price: formatPrice(item.price),
+            pictureTag: item.title,
+            handle: item.handle,
+            imageUrl: item.imageUrl || undefined,
+            url: item.url,
+            store: item.store,
+            currency: item.currency,
+            hasComparison: item.hasComparison,
+          }));
+          setApiProducts((prev) => {
+            const existingKeys = new Set(prev.map((p) => `${p.id || p.handle || p.name}`));
+            const uniqueNew = newProducts.filter(
+              (p) => !existingKeys.has(`${p.id || p.handle || p.name}`)
+            );
+            return [...prev, ...uniqueNew];
+          });
+          setPage(nextPage);
+          setHasMore(res.hasMore);
+        } else {
+          setHasMore(false);
+        }
+      })
+      .catch(() => {
+        setHasMore(false);
+      })
+      .finally(() => {
+        setLoadingMore(false);
+      });
   };
 
   const filteredProducts = useMemo(() => {
@@ -488,9 +535,13 @@ export default function CategoryScreen() {
           <LottieLoader size={44} />
         </View>
       ) : (
-        <ScrollView
+        <FlatList
+          data={filteredProducts}
+          numColumns={2}
+          keyExtractor={(product: SubcategoryProduct, i: number) => `${product.id || product.handle || product.name}-${i}`}
           style={styles.content}
           contentContainerStyle={styles.contentInner}
+          columnWrapperStyle={styles.columnWrapper}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -500,93 +551,136 @@ export default function CategoryScreen() {
               colors={[colors.accentSolid]}
             />
           }
-        >
-          <Animated.FlatList
-            data={FLASH_DISCOUNTS}
-            horizontal
-            keyExtractor={(item: number, i: number) => `${item}-${i}`}
-            showsHorizontalScrollIndicator={false}
-            snapToInterval={FLASH_SNAP}
-            decelerationRate="fast"
-            style={styles.flashScroll}
-            onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: flashScrollX } } }], { useNativeDriver: true })}
-            scrollEventThrottle={16}
-            renderItem={({ item: discount, index }: { item: number; index: number }) => {
-              const inputRange = [(index - 1) * FLASH_SNAP, index * FLASH_SNAP, (index + 1) * FLASH_SNAP];
-              const scale = flashScrollX.interpolate({ inputRange, outputRange: [0.9, 1, 0.9], extrapolate: 'clamp' });
-              const opacity = flashScrollX.interpolate({ inputRange, outputRange: [0.6, 1, 0.6], extrapolate: 'clamp' });
-              const saleTag = CATEGORY_SALE_TAGS[activeCategory] || 'shopping';
-              const imageLock = activeCategory.length * 15 + index;
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
+          ListHeaderComponent={
+            <>
+              <Animated.FlatList
+                data={FLASH_DISCOUNTS}
+                horizontal
+                keyExtractor={(item: number, i: number) => `${item}-${i}`}
+                showsHorizontalScrollIndicator={false}
+                snapToInterval={FLASH_SNAP}
+                decelerationRate="fast"
+                style={styles.flashScroll}
+                onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: flashScrollX } } }], { useNativeDriver: true })}
+                scrollEventThrottle={16}
+                renderItem={({ item: discount, index }: { item: number; index: number }) => {
+                  const inputRange = [(index - 1) * FLASH_SNAP, index * FLASH_SNAP, (index + 1) * FLASH_SNAP];
+                  const scale = flashScrollX.interpolate({ inputRange, outputRange: [0.9, 1, 0.9], extrapolate: 'clamp' });
+                  const opacity = flashScrollX.interpolate({ inputRange, outputRange: [0.6, 1, 0.6], extrapolate: 'clamp' });
+                  const saleTag = CATEGORY_SALE_TAGS[activeCategory] || 'shopping';
+                  const imageLock = activeCategory.length * 15 + index;
 
-              return (
-                <Animated.View style={[styles.flashSale, { width: FLASH_WIDTH, transform: [{ scale }], opacity }]}>
-                  <Image
-                    source={{ uri: loremflickrUri(saleTag, imageLock) }}
-                    style={styles.flashImage}
-                    contentFit="cover"
-                    transition={200}
-                    cachePolicy="memory-disk"
-                  />
-                  <LinearGradient colors={['transparent', colors.navy]} locations={[0.3, 1]} style={StyleSheet.absoluteFillObject} />
-                  <View style={styles.flashTextWrap}>
-                    <Text style={styles.flashSaleEyebrow}>FLASH SALE</Text>
-                    <Text style={styles.flashSaleHeadline}>
-                      Up to {discount}% off {categoryLabel} today
-                    </Text>
-                  </View>
-                </Animated.View>
-              );
-            }}
-          />
+                  return (
+                    <Animated.View style={[styles.flashSale, { width: FLASH_WIDTH, transform: [{ scale }], opacity }]}>
+                      <Image
+                        source={{ uri: loremflickrUri(saleTag, imageLock) }}
+                        style={styles.flashImage}
+                        contentFit="cover"
+                        transition={200}
+                        cachePolicy="memory-disk"
+                      />
+                      <LinearGradient colors={['transparent', colors.navy]} locations={[0.3, 1]} style={StyleSheet.absoluteFillObject} />
+                      <View style={styles.flashTextWrap}>
+                        <Text style={styles.flashSaleEyebrow}>FLASH SALE</Text>
+                        <Text style={styles.flashSaleHeadline}>
+                          Up to {discount}% off {categoryLabel} today
+                        </Text>
+                      </View>
+                    </Animated.View>
+                  );
+                }}
+              />
 
-          <View style={styles.popularHeaderRow}>
-            <Text style={styles.popularHeading}>Popular in {categoryLabel}</Text>
-            {(filter.sort !== 'relevance' || filter.stores.length > 0) && (
-              <TouchableOpacity onPress={() => setFilter({ sort: 'relevance', stores: [] })}>
-                <Text style={styles.clearFilter}>Clear filter</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+              <View style={styles.popularHeaderRow}>
+                <Text style={styles.popularHeading}>Popular in {categoryLabel}</Text>
+                {(filter.sort !== 'relevance' || filter.stores.length > 0) && (
+                  <TouchableOpacity onPress={() => setFilter({ sort: 'relevance', stores: [] })}>
+                    <Text style={styles.clearFilter}>Clear filter</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </>
+          }
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={styles.footerLoader}>
+                <ActivityIndicator size="small" color={colors.accentSolid} />
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>No products match this filter.</Text>
+          }
+          renderItem={({ item: product, index: i }: { item: SubcategoryProduct; index: number }) => (
+            <TouchableOpacity
+              key={`${product.handle || product.name}-${i}`}
+              style={styles.productCard}
+              activeOpacity={0.85}
+              onPress={() =>
+                navigation.navigate('ProductDetail', {
+                  id: product.id,
+                  handle: product.handle,
+                  url: product.url,
+                  productName: product.name,
+                  currentPrice: product.price,
+                  imageUrl: product.imageUrl,
+                  store: product.store,
+                })
+              }
+            >
+              <View style={styles.productImageWrap}>
+                <Image
+                  source={{ uri: product.imageUrl || loremflickrUri(product.pictureTag || 'product', i + 1) }}
+                  style={styles.productImage}
+                  contentFit="contain"
+                  transition={200}
+                  cachePolicy="memory-disk"
+                />
+              </View>
+              <Text style={styles.productName} numberOfLines={2}>{product.name}</Text>
+              <Text style={styles.productPrice}>{product.price}</Text>
 
-          <View style={styles.productGrid}>
-            {filteredProducts.map((product: SubcategoryProduct, i: number) => (
-              <TouchableOpacity
-                key={`${product.handle || product.name}-${i}`}
-                style={styles.productCard}
-                activeOpacity={0.85}
-                onPress={() =>
-                  navigation.navigate('ProductDetail', {
-                    handle: product.handle,
-                    url: product.url,
-                    productName: product.name,
-                    currentPrice: product.price,
-                    imageUrl: product.imageUrl,
-                  })
-                }
-              >
-                <View style={styles.productImageWrap}>
-                  <Image
-                    source={{ uri: product.imageUrl || loremflickrUri(product.pictureTag || 'product', i + 1) }}
-                    style={styles.productImage}
-                    contentFit="contain"
-                    transition={200}
-                    cachePolicy="memory-disk"
-                  />
-                </View>
-                <Text style={styles.productName} numberOfLines={2}>{product.name}</Text>
-                <Text style={styles.productPrice}>{product.price}</Text>
-                {product.store ? (
-                  <View style={styles.storeBadge}>
-                    <Text style={styles.storeBadgeText}>{product.store}</Text>
+              <View style={styles.badgeRow}>
+                {product.hasComparison ? (
+                  <View style={styles.compareBadge}>
+                    <Text style={styles.compareBadgeText}>2+ stores</Text>
                   </View>
                 ) : null}
-              </TouchableOpacity>
-            ))}
-            {filteredProducts.length === 0 && (
-              <Text style={styles.emptyText}>No products match this filter.</Text>
-            )}
-          </View>
-        </ScrollView>
+                {product.store ? (
+                  <View
+                    style={[
+                      styles.storeBadge,
+                      product.store.toLowerCase() === 'daraz'
+                        ? { backgroundColor: '#FFF0E6' }
+                        : product.store.toLowerCase() === 'telemart'
+                        ? { backgroundColor: '#EAF4EF' }
+                        : product.store.toLowerCase() === 'mega.pk'
+                        ? { backgroundColor: '#E7EEFC' }
+                        : null,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.storeBadgeText,
+                        product.store.toLowerCase() === 'daraz'
+                          ? { color: '#F57224' }
+                          : product.store.toLowerCase() === 'telemart'
+                          ? { color: '#1D9A7C' }
+                          : product.store.toLowerCase() === 'mega.pk'
+                          ? { color: '#2F6FB0' }
+                          : null,
+                      ]}
+                    >
+                      {product.store}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            </TouchableOpacity>
+          )}
+        />
       )}
 
       <FilterSheet
@@ -682,6 +776,8 @@ const styles = StyleSheet.create({
 
   content: { flex: 1 },
   contentInner: { padding: 16, paddingBottom: 32 },
+  columnWrapper: { justifyContent: 'space-between', marginBottom: 12 },
+  footerLoader: { paddingVertical: 20, alignItems: 'center', justifyContent: 'center', width: '100%' },
 
   flashScroll: { marginBottom: 18, flexGrow: 0 },
   flashSale: { borderRadius: radii.medium, marginRight: 10, overflow: 'hidden', height: 110 },
@@ -715,13 +811,23 @@ const styles = StyleSheet.create({
   productImage: { width: '100%', height: '100%' },
   productName: { fontSize: 13, fontFamily: fonts.body, color: colors.textSecondary, marginBottom: 3 },
   productPrice: { fontSize: 15, fontFamily: fonts.monoEmphasis, color: colors.textPrimary },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4, alignItems: 'center' },
+  compareBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#E6F9F0',
+    borderColor: '#10B981',
+    borderWidth: 1,
+    borderRadius: radii.small,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  compareBadgeText: { fontSize: 10, fontFamily: fonts.label, color: '#059669' },
   storeBadge: {
     alignSelf: 'flex-start',
     backgroundColor: colors.accentTint,
     borderRadius: radii.small,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    marginTop: 4,
   },
   storeBadgeText: { fontSize: 10, fontFamily: fonts.label, color: colors.accentSolid },
   emptyText: { fontSize: 13, fontFamily: fonts.body, color: colors.textTertiary, paddingVertical: 24, textAlign: 'center', width: '100%' },

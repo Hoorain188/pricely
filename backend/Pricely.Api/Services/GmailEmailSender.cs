@@ -57,9 +57,10 @@ public class GmailEmailSender : IEmailSender
     {
         if (string.IsNullOrWhiteSpace(_options.FromAddress) || string.IsNullOrWhiteSpace(_options.SmtpPassword))
         {
-            throw new InvalidOperationException(
-                "Email is not configured. Set Email:FromAddress and Email:SmtpPassword " +
-                "(see backend/README.md for the user-secrets commands).");
+            _logger.LogWarning("==================================================");
+            _logger.LogWarning("DEV MODE: Email not configured. VERIFICATION CODE FOR {Email}: [{Code}]", toEmail, code);
+            _logger.LogWarning("==================================================");
+            return;
         }
 
         var message = new MimeMessage();

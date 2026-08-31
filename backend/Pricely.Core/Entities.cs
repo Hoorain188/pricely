@@ -84,6 +84,10 @@ public class StoreListing
     public bool InStock { get; set; }
     public string? ProductUrl { get; set; }
     public string? ImageUrl { get; set; }
+
+    /// <summary>Scraper-assigned category slug (e.g. "mobiles_tablets"). Used by browse/search endpoints.</summary>
+    public string? Category { get; set; }
+
     public MatchStatus MatchStatus { get; set; }
     public DateTimeOffset ScrapedAt { get; set; }
 

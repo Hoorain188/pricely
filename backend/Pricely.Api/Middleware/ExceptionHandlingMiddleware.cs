@@ -29,6 +29,11 @@ public class ExceptionHandlingMiddleware
             _logger.LogInformation("Auth rejected: {Code} — {Message}", ex.Code, ex.Message);
             await WriteAsync(context, ex.StatusCode, ex.Code, ex.Message);
         }
+        catch (BadHttpRequestException ex)
+        {
+            _logger.LogInformation("Bad HTTP request on {Path}: {Message}", context.Request.Path, ex.Message);
+            await WriteAsync(context, StatusCodes.Status400BadRequest, "bad_request", ex.Message);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception on {Path}", context.Request.Path);

@@ -333,6 +333,7 @@ export default function CategoryScreen() {
             store: item.store,
             currency: item.currency,
             hasComparison: item.hasComparison,
+            hasPriceDrop: item.hasPriceDrop,
           })));
           setHasMore(res.hasMore);
         } else if (alive) {
@@ -391,6 +392,7 @@ export default function CategoryScreen() {
             store: item.store,
             currency: item.currency,
             hasComparison: item.hasComparison,
+            hasPriceDrop: item.hasPriceDrop,
           }));
           setApiProducts((prev) => {
             const existingKeys = new Set(prev.map((p) => `${p.id || p.handle || p.name}`));
@@ -648,6 +650,11 @@ export default function CategoryScreen() {
                     <Text style={styles.compareBadgeText}>2+ stores</Text>
                   </View>
                 ) : null}
+                {product.hasPriceDrop ? (
+                  <View style={styles.priceDropBadge}>
+                    <Text style={styles.priceDropBadgeText}>📉 Price Drop</Text>
+                  </View>
+                ) : null}
                 {product.store ? (
                   <View
                     style={[
@@ -822,6 +829,16 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   compareBadgeText: { fontSize: 10, fontFamily: fonts.label, color: '#059669' },
+  priceDropBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderColor: '#EF4444',
+    borderWidth: 1,
+    borderRadius: radii.small,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  priceDropBadgeText: { fontSize: 10, fontFamily: fonts.label, color: '#DC2626' },
   storeBadge: {
     alignSelf: 'flex-start',
     backgroundColor: colors.accentTint,

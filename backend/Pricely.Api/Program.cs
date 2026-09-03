@@ -338,6 +338,11 @@ builder.Services.AddOutputCache(options =>
         .SetVaryByQuery("store"));
 });
 
+// Railway/cloud PORT support
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(port))
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
 var app = builder.Build();
 
 // ── Pipeline ─────────────────────────────────────────────────────────────

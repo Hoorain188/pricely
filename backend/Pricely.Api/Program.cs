@@ -495,7 +495,8 @@ app.MapGet("/api/browse", async (
     var sql = $@"
         SELECT sl.id, sl.raw_title, s.name AS store, sl.price,
                sl.product_url, sl.image_url,
-               CASE WHEN c.store_listing_id IS NOT NULL THEN true ELSE false END AS has_comparison
+               CASE WHEN c.store_listing_id IS NOT NULL THEN true ELSE false END AS has_comparison,
+               CASE WHEN d.store_listing_id IS NOT NULL THEN true ELSE false END AS has_price_drop
         FROM store_listings sl
         JOIN stores s ON s.id = sl.store_id
         LEFT JOIN (
@@ -509,8 +510,17 @@ app.MapGet("/api/browse", async (
                 HAVING COUNT(DISTINCT sl2.store_id) >= 2
             )
         ) c ON c.store_listing_id = sl.id
+        LEFT JOIN (
+            -- Price DROP: purana daam abhi ke daam se ZYADA tha
+            SELECT DISTINCT ph.store_listing_id
+            FROM price_history ph
+            JOIN store_listings sl3 ON sl3.id = ph.store_listing_id
+            WHERE ph.price > sl3.price
+              AND ph.recorded_at >= NOW() - INTERVAL '30 days'
+        ) d ON d.store_listing_id = sl.id
         WHERE sl.category = {{0}} {storeFilter}
         ORDER BY has_comparison DESC,
+                 has_price_drop DESC,
                  md5(sl.id::text || '{rotationSeed}')
         LIMIT {size} OFFSET {offset};";
 
@@ -544,7 +554,8 @@ app.MapGet("/api/browse", async (
             currency = "PKR",
             url = r.product_url,
             imageUrl = r.image_url,
-            hasComparison = r.has_comparison
+            hasComparison = r.has_comparison,
+            hasPriceDrop = r.has_price_drop
         })
     });
 }).RequireRateLimiting("api").CacheOutput("browse");
@@ -1014,12 +1025,57 @@ app.MapGet("/api/megapk-product", async (string url, IHttpClientFactory httpFact
         var titleM = Regex.Match(html, @"<h2 class=""product-title""\s*>(.*?)</h2>", RegexOptions.Singleline);
         var title = titleM.Success ? CleanText(titleM.Groups[1].Value) : "";
 
-        var imgM = Regex.Match(html, @"<img[^>]*id=""main-prod-img""[^>]*>", RegexOptions.Singleline);
-        var mainImage = "";
-        if (imgM.Success)
+        // --- Images: sirf ISI product ki (URL se product id nikaal kar) ---
+        var images = new List<string>();
+
+        // URL se product id: .../watches_products/25318/GOOGLE-PIXEL-WATCH-2.html
+        var idMatch = Regex.Match(url, @"/(\d+)/");
+        var productId = idMatch.Success ? idMatch.Groups[1].Value : "";
+
+        // 1) Main image (id ke saath)
+        if (!string.IsNullOrEmpty(productId))
         {
-            var srcM = Regex.Match(imgM.Value, @"src=""([^""]+)""");
-            if (srcM.Success) mainImage = srcM.Groups[1].Value;
+            var mainMatches = Regex.Matches(html,
+                $@"(?:src|data-src)=[""'](?:https://www\.mega\.pk)?/?(items_images/[^""']*_{productId}\.(?:jpg|jpeg|png|webp))[""']",
+                RegexOptions.IgnoreCase);
+
+            foreach (Match m in mainMatches)
+            {
+                var full = "https://www.mega.pk/" + m.Groups[1].Value;
+                if (!images.Contains(full)) images.Add(full);
+            }
+        }
+
+        // 2) Thumbnails — gallery div ke andar se (agar hai)
+        var galleryMatch = Regex.Match(html,
+            @"<div[^>]*(?:id|class)=[""'][^""']*(?:thumb|gallery|prod-img)[^""']*[""'][^>]*>(.*?)</div>",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+        if (galleryMatch.Success)
+        {
+            var thumbMatches = Regex.Matches(galleryMatch.Groups[1].Value,
+                @"(?:src|data-src)=[""'](?:https://www\.mega\.pk)?/?(items_images/[^""']+\.(?:jpg|jpeg|png|webp))[""']",
+                RegexOptions.IgnoreCase);
+
+            foreach (Match m in thumbMatches)
+            {
+                var full = "https://www.mega.pk/" + m.Groups[1].Value;
+                if (!images.Contains(full)) images.Add(full);
+                if (images.Count >= 6) break;
+            }
+        }
+
+        // 3) Kuch na mile to main-prod-img se (purana tareeqa)
+        if (images.Count == 0)
+        {
+            var mainImg = Regex.Match(html,
+                @"id=[""']main-prod-img[""'][^>]*src=[""']([^""']+)[""']",
+                RegexOptions.IgnoreCase);
+            if (mainImg.Success)
+            {
+                var src = mainImg.Groups[1].Value;
+                images.Add(src.StartsWith("http") ? src : "https://www.mega.pk/" + src.TrimStart('/'));
+            }
         }
 
         decimal price = 0;
@@ -1056,7 +1112,7 @@ app.MapGet("/api/megapk-product", async (string url, IHttpClientFactory httpFact
             Store = "Mega.pk",
             Price = price.ToString(),
             Brand = brand,
-            Images = new List<string> { mainImage },
+            Images = images,
             Specs = specs,
             Url = cleanUrl
         });
@@ -1092,16 +1148,27 @@ app.MapGet("/api/daraz-product", async (string url, IHttpClientFactory httpFacto
     {
         var html = await http.GetStringAsync(url);
 
-        // --- Images: seo-gallery se saari image URLs nikaalo ---
+        // --- Images: har mumkin Daraz CDN se ---
         var images = new List<string>();
         var imgMatches = Regex.Matches(html,
-            @"<img[^>]*src=""(https://img\.drz\.lazcdn\.com/static/[^""]+\.webp)""",
+            @"https://(?:img\.drz\.lazcdn\.com|static-01\.daraz\.pk|pk-live-\d+\.slatic\.net)/[^""'\s\\]+\.(?:jpg|jpeg|png|webp)",
             RegexOptions.IgnoreCase);
+
+        var seenIds = new HashSet<string>();
         foreach (Match m in imgMatches)
         {
-            var imgUrl = m.Groups[1].Value;
-            if (!images.Contains(imgUrl))   // duplicate na aaye (gallery + hidden dono mein hain)
+            var imgUrl = m.Value;
+            if (imgUrl.Contains("_60x60") || imgUrl.Contains("_80x80") ||
+                imgUrl.Contains("_100x100") || imgUrl.Contains("_120x120")) continue;
+
+            // filename ka hash nikaalo (duplicate pakadne ke liye)
+            var fileMatch = Regex.Match(imgUrl, @"/([a-f0-9]{32})\.");
+            var fileId = fileMatch.Success ? fileMatch.Groups[1].Value : imgUrl;
+
+            if (seenIds.Add(fileId))
                 images.Add(imgUrl);
+
+            if (images.Count >= 6) break;
         }
 
         // --- Basic info: pdpTrackingData JSON se ---
@@ -1440,7 +1507,8 @@ record GroupRow(long group_id, string raw_title, string store, decimal price,
 record CompareRow(string store, decimal price, string? product_url, string? raw_title);
 
 record BrowseRow(long id, string raw_title, string store, decimal price,
-                 string? product_url, string? image_url, bool has_comparison);
+                 string? product_url, string? image_url,
+                 bool has_comparison, bool has_price_drop);
 
 record HistoryRow(decimal price, DateTime recorded_at);
 

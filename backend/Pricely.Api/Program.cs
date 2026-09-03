@@ -436,9 +436,12 @@ try
     RecurringJob.RemoveIfExists("megapk-sync");
     RecurringJob.RemoveIfExists("daraz-sync");
 
-    // Deduplication har roz raat 2 baje khud chale (sab syncs ke baad)
-    RecurringJob.AddOrUpdate<DeduplicationService>(
-        "deduplication", s => s.RunDeduplicationAsync(), "0 2 * * *");
+    if (app.Environment.IsProduction())
+    {
+        // Deduplication har roz raat 2 baje khud chale (sab syncs ke baad)
+        RecurringJob.AddOrUpdate<DeduplicationService>(
+            "deduplication", s => s.RunDeduplicationAsync(), "0 2 * * *");
+    }
 }
 catch (Exception ex)
 {

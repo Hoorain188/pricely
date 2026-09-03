@@ -3,20 +3,25 @@ import Constants from 'expo-constants';
 /**
  * Where the backend lives.
  *
- * "localhost" is useless from a phone — on a device it means the phone
- * itself, not the laptop running the API. So in development we reuse the
- * address Expo is already serving this bundle from, which is exactly the
- * laptop's address on the same WiFi. That means no hardcoded IP to update
- * every time the network hands out a different one.
+ * Production Railway Backend: https://pricely-production-15a0.up.railway.app
+ * Uses HTTPS with no port specification.
  *
- * Set EXPO_PUBLIC_API_URL to override — that's what to point at the
- * deployed URL once the API is hosted somewhere.
+ * In local development, if USE_PRODUCTION is set to false, it reuses the address
+ * Expo is serving from so there's no hardcoded local IP to update.
  */
+const PRODUCTION_URL = 'https://pricely-production-15a0.up.railway.app';
 const DEV_PORT = 5059;
+
+// Set USE_PRODUCTION to true to point at Railway live API, or false for local dev server
+const USE_PRODUCTION = true;
 
 function resolveBaseUrl(): string {
   const override = process.env.EXPO_PUBLIC_API_URL;
   if (override) return override.replace(/\/$/, '');
+
+  if (USE_PRODUCTION || !__DEV__) {
+    return PRODUCTION_URL;
+  }
 
   // e.g. "192.168.100.25:8081" — the machine running `expo start`.
   const hostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.debuggerHost;
@@ -24,8 +29,6 @@ function resolveBaseUrl(): string {
 
   if (host) return `http://${host}:${DEV_PORT}`;
 
-  // Only reached in a production build with no override set, where a
-  // real URL should have been configured.
   return `http://localhost:${DEV_PORT}`;
 }
 

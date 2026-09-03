@@ -29,6 +29,7 @@ export interface SubcategoryProduct {
   store?: string;
   currency?: string;
   hasComparison?: boolean;
+  hasPriceDrop?: boolean;
 }
 
 export interface Subcategory {
@@ -152,6 +153,7 @@ export async function searchProducts(query: string, store?: string): Promise<Sub
         url: item.url,
         store: item.store,
         currency: item.currency,
+        hasComparison: item.hasComparison,
       }));
     }
   } catch {

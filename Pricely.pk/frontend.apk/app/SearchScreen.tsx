@@ -206,11 +206,47 @@ export default function SearchScreen() {
                     {product.name}
                   </Text>
                   <Text style={styles.productPrice}>{product.price}</Text>
-                  {product.store && (
-                    <Text style={{ fontSize: 10, fontFamily: fonts.label, color: colors.accentSolid, marginTop: 2 }}>
-                      {product.store}
-                    </Text>
-                  )}
+                  <View style={styles.badgeRow}>
+                    {product.hasComparison ? (
+                      <View style={styles.compareBadge}>
+                        <Text style={styles.compareBadgeText}>2+ stores</Text>
+                      </View>
+                    ) : null}
+                    {product.hasPriceDrop ? (
+                      <View style={styles.priceDropBadge}>
+                        <Text style={styles.priceDropBadgeText}>📉 Price Drop</Text>
+                      </View>
+                    ) : null}
+                    {product.store ? (
+                      <View
+                        style={[
+                          styles.storeBadge,
+                          product.store.toLowerCase() === 'daraz'
+                            ? { backgroundColor: '#FFF0E6' }
+                            : product.store.toLowerCase() === 'telemart'
+                            ? { backgroundColor: '#EAF4EF' }
+                            : product.store.toLowerCase() === 'mega.pk'
+                            ? { backgroundColor: '#E7EEFC' }
+                            : null,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.storeBadgeText,
+                            product.store.toLowerCase() === 'daraz'
+                              ? { color: '#F57224' }
+                              : product.store.toLowerCase() === 'telemart'
+                              ? { color: '#1D9A7C' }
+                              : product.store.toLowerCase() === 'mega.pk'
+                              ? { color: '#2F6FB0' }
+                              : null,
+                          ]}
+                        >
+                          {product.store}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
                 </TouchableOpacity>
               ))}
             </View>
@@ -334,6 +370,35 @@ const styles = StyleSheet.create({
   image: { width: '100%', height: '100%' },
   productName: { fontSize: 13, fontFamily: fonts.body, color: colors.textSecondary, marginBottom: 4 },
   productPrice: { fontSize: 15, fontFamily: fonts.monoEmphasis, color: colors.textPrimary },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4, alignItems: 'center' },
+  compareBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#E6F9F0',
+    borderColor: '#10B981',
+    borderWidth: 1,
+    borderRadius: radii.small,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  compareBadgeText: { fontSize: 10, fontFamily: fonts.label, color: '#059669' },
+  priceDropBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderColor: '#EF4444',
+    borderWidth: 1,
+    borderRadius: radii.small,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  priceDropBadgeText: { fontSize: 10, fontFamily: fonts.label, color: '#DC2626' },
+  storeBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.accentTint,
+    borderRadius: radii.small,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  storeBadgeText: { fontSize: 10, fontFamily: fonts.label, color: colors.accentSolid },
 
   emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
   emptyTitle: { fontSize: 17, fontFamily: fonts.headlineBold, color: colors.textPrimary, marginTop: 12 },

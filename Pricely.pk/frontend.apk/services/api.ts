@@ -17,6 +17,7 @@ export interface ApiProduct {
   url: string;
   imageUrl: string;
   hasComparison?: boolean;
+  hasPriceDrop?: boolean;
 }
 
 export interface SearchResponse {

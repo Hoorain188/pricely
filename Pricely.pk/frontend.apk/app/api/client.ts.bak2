@@ -215,33 +215,6 @@ export interface AdminProductsResponse {
   totalPages: number;
 }
 
-/** A shopper watching one listing. Alerts hang off listings, not products,
- *  because almost nothing in the catalogue has been merged into a product. */
-export interface ShopperAlert {
-  id: number;
-  storeListingId: number | null;
-  productId: number | null;
-  targetPrice: number;
-  isTriggered: boolean;
-  triggeredAt: string | null;
-  createdAt: string;
-  title: string | null;
-  currentPrice: number | null;
-  imageUrl: string | null;
-  productUrl: string | null;
-}
-
-export interface AdminAlert {
-  id: number;
-  title: string;
-  storeName: string | null;
-  imageUrl: string | null;
-  currentPrice: number | null;
-  targetPrice: number;
-  isTriggered: boolean;
-  createdAt: string;
-}
-
 export interface ApiActivityEntry {
   id: number;
   /** Already rendered as a sentence by the server. */
@@ -283,19 +256,6 @@ export interface ReportsResponse {
 // -------------------------------------------------------------- calls
 
 export const api = {
-  alerts: () => request<{ items: ShopperAlert[] }>('/alerts'),
-
-  setAlert: (storeListingId: number, targetPrice: number) =>
-    request<{ watching: boolean; storeListingId: number; currentPrice: number }>('/alerts', {
-      method: 'POST',
-      body: JSON.stringify({ storeListingId, targetPrice }),
-    }),
-
-  removeAlert: (id: number) =>
-    request<{ watching: boolean; id: number }>(`/alerts/${id}`, { method: 'DELETE' }),
-
-  adminAlerts: () => request<{ items: AdminAlert[] }>('/admin/alerts'),
-
   logSearch: (queryText: string) =>
     request<void>('/searches', { method: 'POST', body: JSON.stringify({ queryText }) }),
   logStoreClick: (url: string) =>

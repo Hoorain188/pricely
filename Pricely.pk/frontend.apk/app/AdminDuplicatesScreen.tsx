@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet,
   ActivityIndicator, RefreshControl,
+  Image,
 } from 'react-native';
 import { Check, Search } from 'lucide-react-native';
 import SegmentedControl from '../components/SegmentedControl';
@@ -257,6 +258,15 @@ export default function AdminDuplicatesScreen() {
                               <View style={[styles.checkbox, isChecked && styles.checkboxChecked]}>
                                 {isChecked ? <Check size={12} color="#fff" strokeWidth={3} /> : null}
                               </View>
+                              {listing.imageUrl ? (
+                                <Image
+                                  source={{ uri: listing.imageUrl }}
+                                  style={styles.listingThumb}
+                                  resizeMode="contain"
+                                />
+                              ) : (
+                                <View style={[styles.listingThumb, styles.listingThumbEmpty]} />
+                              )}
                               <View style={{ flex: 1 }}>
                                 <Text style={[styles.listingTitle, !isChecked && styles.listingTitleMuted]}>
                                   {listing.title}
@@ -345,6 +355,8 @@ export default function AdminDuplicatesScreen() {
 }
 
 const styles = StyleSheet.create({
+  listingThumb: { width: 34, height: 34, borderRadius: 6, backgroundColor: colors.background },
+  listingThumbEmpty: { borderWidth: 1, borderColor: colors.border },
   root: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 40 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, backgroundColor: colors.background },

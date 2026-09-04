@@ -10,7 +10,8 @@ public record ListingDto(
     string StoreName,
     decimal Price,
     string Currency,
-    bool PreSelected);
+    bool PreSelected,
+    string? ImageUrl);
 
 public record DuplicateGroupDto(
     long Id,
@@ -120,7 +121,8 @@ public record AdminProductDto(
     int ListingCount,
     int StoreCount,
     decimal? LowestPrice,
-    decimal? HighestPrice);
+    decimal? HighestPrice,
+    string? ImageUrl);
 
 public record AdminProductsResponse(
     IReadOnlyList<AdminProductDto> Items,

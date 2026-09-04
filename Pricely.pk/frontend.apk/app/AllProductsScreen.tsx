@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { ArrowLeft, Search } from 'lucide-react-native';
 import { colors, fonts, radii } from '../theme/colors';
@@ -102,6 +103,11 @@ export default function AllProductsScreen({ navigation }: AllProductsScreenProps
       <View style={styles.list}>
         {products.map((p) => (
           <View key={p.id} style={styles.row}>
+            {p.imageUrl ? (
+              <Image source={{ uri: p.imageUrl }} style={styles.thumb} resizeMode="contain" />
+            ) : (
+              <View style={[styles.thumb, styles.thumbEmpty]} />
+            )}
             <View style={{ flex: 1 }}>
               <Text style={styles.rowTitle} numberOfLines={2}>
                 {p.name}
@@ -254,6 +260,8 @@ const styles = StyleSheet.create({
     borderRadius: radii.medium,
     padding: 13,
   },
+  thumb: { width: 44, height: 44, borderRadius: 8, backgroundColor: colors.background },
+  thumbEmpty: { borderWidth: 1, borderColor: colors.border },
   rowTitle: {
     fontSize: 13,
     fontFamily: fonts.label,

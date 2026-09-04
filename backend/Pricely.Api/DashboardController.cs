@@ -24,8 +24,12 @@ public class DashboardController : ControllerBase
 
         var totalUsers      = await _db.Users.CountAsync(u => u.Role == UserRole.User, ct);
         var usersWeekAgo    = await _db.Users.CountAsync(u => u.Role == UserRole.User && u.CreatedAt < weekAgo, ct);
-        var products        = await _db.Products.CountAsync(ct);
-        var productsWeekAgo = await _db.Products.CountAsync(p => p.CreatedAt < weekAgo, ct);
+        // Only products that actually carry listings. Twenty-two empty rows —
+        // seed data and leftovers from splits — once made this read 24 when two
+        // had anything behind them.
+        var products        = await _db.Products.CountAsync(p => p.Listings.Any(), ct);
+        var productsWeekAgo = await _db.Products.CountAsync(
+            p => p.CreatedAt < weekAgo && p.Listings.Any(), ct);
         var activeAlerts    = await _db.PriceAlerts.CountAsync(a => !a.IsTriggered, ct);
         var alertsWeekAgo   = await _db.PriceAlerts.CountAsync(a => !a.IsTriggered && a.CreatedAt < weekAgo, ct);
 

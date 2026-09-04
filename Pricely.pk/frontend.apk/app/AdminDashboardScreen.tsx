@@ -16,6 +16,9 @@ interface AdminDashboardScreenProps {
 }
 
 export default function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) {
+  // The Scrapers healthy tile scrolls to the section it summarises rather
+  // than opening a screen that would repeat the same four rows.
+  const scrollRef = useRef<ScrollView>(null);
   const { user } = useAuthStore();
   const { logActivity } = useActivityStore();
 
@@ -106,6 +109,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
 
   return (
     <ScrollView
+      ref={scrollRef}
       style={styles.root}
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -136,6 +140,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
           label="Scrapers healthy"
           trend={failingCount > 0 ? `${failingCount} failing` : 'all healthy'}
           warn={failingCount > 0}
+          onPress={() => scrollRef.current?.scrollTo({ y: 320, animated: true })}
         />
         <StatTile
           value={kpis.activeAlerts.value.toLocaleString()}

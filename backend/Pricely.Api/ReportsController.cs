@@ -193,6 +193,33 @@ public class ReportsController : ControllerBase
     }
 
     /// <summary>Activity log. Sentences are rendered here, not in the app.</summary>
+    /// <summary>
+    /// Every shopper price alert, newest first. One row per alert rather than
+    /// per product: two shoppers watching the same listing at different targets
+    /// are two different things to know about.
+    /// </summary>
+    [HttpGet("alerts")]
+    public async Task<IActionResult> Alerts(CancellationToken ct)
+    {
+        var items = await _db.PriceAlerts
+            .OrderByDescending(a => a.CreatedAt)
+            .Take(200)
+            .Select(a => new
+            {
+                a.Id,
+                Title        = a.StoreListing != null ? a.StoreListing.RawTitle : "Unknown product",
+                StoreName    = a.StoreListing != null ? a.StoreListing.Store.Name : null,
+                ImageUrl     = a.StoreListing != null ? a.StoreListing.ImageUrl : null,
+                CurrentPrice = a.StoreListing != null ? a.StoreListing.Price : (decimal?)null,
+                a.TargetPrice,
+                a.IsTriggered,
+                a.CreatedAt
+            })
+            .ToListAsync(ct);
+
+        return Ok(new { items });
+    }
+
     [HttpGet("activity")]
     public async Task<ActionResult<ActivityResponse>> Activity(
         [FromQuery] int page = 1,

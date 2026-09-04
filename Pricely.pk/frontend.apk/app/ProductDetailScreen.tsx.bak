@@ -175,33 +175,9 @@ export default function ProductDetailScreen() {
     }
   };
 
-  const handleSetAlert = async () => {
-    const target = Number(String(alertPrice).replace(/[^0-9.]/g, ''));
-    if (!target || target <= 0) {
-      setSuccessMessage('Enter a target price above zero.');
-      setSaveSuccessVisible(true);
-      return;
-    }
-
-    // The alert has to reach the server to be worth anything — a target kept
-    // in device memory cannot be checked when the price moves, and vanishes
-    // when the app closes.
-    const numListingId = listingId ? Number(listingId) : undefined;
-    if (!numListingId) {
-      setSuccessMessage("This product can't be watched yet — open it from search or a category first.");
-      setSaveSuccessVisible(true);
-      return;
-    }
-
-    try {
-      await api.setAlert(numListingId, target);
-      addAlert({ name: productName, targetPrice: String(target), currentPrice });
-      setSuccessMessage(
-        `We will notify you once ${productName} drops below Rs ${target.toLocaleString()}`,
-      );
-    } catch {
-      setSuccessMessage("Could not save that alert. Check your connection and try again.");
-    }
+  const handleSetAlert = () => {
+    addAlert({ name: productName, targetPrice: alertPrice, currentPrice });
+    setSuccessMessage(`We will notify you once ${productName} drops below Rs ${Number(alertPrice).toLocaleString()}`);
     setSaveSuccessVisible(true);
   };
 

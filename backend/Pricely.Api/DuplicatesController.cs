@@ -192,6 +192,45 @@ public class DuplicatesController : ControllerBase
     }
 
     /// <summary>
+    /// Every merged product with its store spread. Backs the "Products tracked"
+    /// tile on the dashboard, which was showing a real count above a hardcoded
+    /// list of eight fictional products.
+    /// </summary>
+    [HttpGet("products")]
+    public async Task<ActionResult<AdminProductsResponse>> Products(
+        [FromQuery] string? q,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken ct = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 200);
+
+        var query = _db.Products.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(q))
+            query = query.Where(p => EF.Functions.ILike(p.Name, $"%{q.Trim()}%"));
+
+        var total = await query.CountAsync(ct);
+
+        var items = await query
+            .OrderBy(p => p.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(p => new AdminProductDto(
+                p.Id,
+                p.Name,
+                p.Category != null ? p.Category.Name : null,
+                p.Listings.Count,
+                p.Listings.Select(l => l.StoreId).Distinct().Count(),
+                p.Listings.Any() ? p.Listings.Min(l => l.Price) : (decimal?)null,
+                p.Listings.Any() ? p.Listings.Max(l => l.Price) : (decimal?)null))
+            .ToListAsync(ct);
+
+        return Ok(new AdminProductsResponse(
+            items, total, page, (int)Math.Ceiling(total / (double)pageSize)));
+    }
+
+    /// <summary>
     /// Undo a merge. Listings become their own products again AND the group
     /// goes back to needs_review, so it reappears in the review queue.
     /// Without reopening the group the split row vanishes from both tabs.

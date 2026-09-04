@@ -196,6 +196,23 @@ export interface NotificationPrefs {
   weeklySummaryEmail: boolean;
 }
 
+export interface AdminProduct {
+  id: number;
+  name: string;
+  category: string | null;
+  listingCount: number;
+  storeCount: number;
+  lowestPrice: number | null;
+  highestPrice: number | null;
+}
+
+export interface AdminProductsResponse {
+  items: AdminProduct[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
 export interface ApiActivityEntry {
   id: number;
   /** Already rendered as a sentence by the server. */
@@ -245,6 +262,12 @@ export const api = {
 
   rerunScraper: (storeId: number) =>
     request<{ store: string }>(`/admin/scrapers/${storeId}/run`, { method: 'POST' }),
+
+  products: (search?: string, page = 1, pageSize = 50) =>
+    request<AdminProductsResponse>(
+      `/admin/products?page=${page}&pageSize=${pageSize}` +
+        (search ? `&q=${encodeURIComponent(search)}` : ''),
+    ),
 
   duplicates: (status: 'pending' | 'merged', search?: string) =>
     request<DuplicatesResponse>(

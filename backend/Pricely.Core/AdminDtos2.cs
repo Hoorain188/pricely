@@ -112,3 +112,18 @@ public record ActivityResponse(
     IReadOnlyList<ActivityEntryDto> Items,
     int Page,
     int TotalPages);
+/// <summary>One merged product and how many stores carry it.</summary>
+public record AdminProductDto(
+    long Id,
+    string Name,
+    string? Category,
+    int ListingCount,
+    int StoreCount,
+    decimal? LowestPrice,
+    decimal? HighestPrice);
+
+public record AdminProductsResponse(
+    IReadOnlyList<AdminProductDto> Items,
+    int Total,
+    int Page,
+    int TotalPages);

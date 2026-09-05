@@ -217,6 +217,20 @@ export interface AdminProductsResponse {
 
 /** A shopper watching one listing. Alerts hang off listings, not products,
  *  because almost nothing in the catalogue has been merged into a product. */
+/** A favourite hangs off a listing, like an alert — almost nothing has been
+ *  merged into a product, so a product id would rule most of the catalogue out. */
+export interface ShopperFavorite {
+  id: number;
+  storeListingId: number | null;
+  productId: number | null;
+  createdAt: string;
+  title: string | null;
+  price: number | null;
+  imageUrl: string | null;
+  storeName: string | null;
+  productUrl: string | null;
+}
+
 export interface ShopperAlert {
   id: number;
   storeListingId: number | null;
@@ -283,6 +297,20 @@ export interface ReportsResponse {
 // -------------------------------------------------------------- calls
 
 export const api = {
+  favorites: () => request<{ items: ShopperFavorite[] }>('/favorites'),
+
+  addFavorite: (storeListingId: number) =>
+    request<{ favorited: boolean; storeListingId: number }>('/favorites', {
+      method: 'POST',
+      body: JSON.stringify({ storeListingId }),
+    }),
+
+  removeFavorite: (storeListingId: number) =>
+    request<{ favorited: boolean; storeListingId: number }>(
+      `/favorites/${storeListingId}`,
+      { method: 'DELETE' },
+    ),
+
   alerts: () => request<{ items: ShopperAlert[] }>('/alerts'),
 
   setAlert: (storeListingId: number, targetPrice: number) =>

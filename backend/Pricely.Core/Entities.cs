@@ -166,11 +166,21 @@ public class StoreClick
 
 public class Favorite
 {
+    public long Id { get; set; }
     public long UserId { get; set; }
-    public long ProductId { get; set; }
-    public DateTimeOffset CreatedAt { get; set; }
 
-    public Product Product { get; set; } = null!;
+    /// <summary>
+    /// Set only when the listing has been merged into a product. Favouriting
+    /// hangs off the listing for the same reason alerts do: two products exist
+    /// against fifteen thousand listings.
+    /// </summary>
+    public long? ProductId { get; set; }
+    public Product? Product { get; set; }
+
+    public long? StoreListingId { get; set; }
+    public StoreListing? StoreListing { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 public class PriceAlert

@@ -1,21 +1,56 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, BackHandler } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+  BackHandler,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { Heart, Smartphone } from 'lucide-react-native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { Heart } from 'lucide-react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, radii, shadows, gradients } from '../theme/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import Sidebar from '../components/Sidebar';
 import LottieHamburger from '../components/LottieHamburger';
 import LottieBackButton from '../components/Lottiebackbutton';
-import { useUserStore } from '../context/UserStore';
+import { api, ApiError, formatPrice, type ShopperFavorite } from './api/client';
 
 export default function FavoritesScreen() {
   const navigation = useNavigation<any>();
-  const { favorites, toggleFavorite } = useUserStore();
-  const [activeTab, setActiveTab] = useState<'all' | 'dropped'>('all');
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const [favorites, setFavorites] = useState<ShopperFavorite[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setError(null);
+      const res = await api.favorites();
+      setFavorites(res.items);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load your favourites.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  // Reload on focus so something favourited on a product page is here when the
+  // shopper comes back to look for it.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const handleBack = () => {
     if (navigation.canGoBack()) {
@@ -38,12 +73,117 @@ export default function FavoritesScreen() {
     return () => subscription.remove();
   }, [navigation, menuOpen]);
 
-  const filteredFavorites = favorites.filter((item) => {
-    if (activeTab === 'dropped') return !!item.priceDrop;
-    return true;
-  });
+  const handleRemove = async (fav: ShopperFavorite) => {
+    if (!fav.storeListingId) return;
+    setRemovingId(fav.id);
+    // Remove from the list first — the heart is already filled, so waiting on
+    // the network just makes the tap feel dead.
+    setFavorites((prev) => prev.filter((f) => f.id !== fav.id));
+    try {
+      await api.removeFavorite(fav.storeListingId);
+    } catch {
+      load();
+    } finally {
+      setRemovingId(null);
+    }
+  };
 
-  const droppedCount = favorites.filter((item) => !!item.priceDrop).length;
+  const renderBody = () => {
+    if (loading) {
+      return (
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator color={colors.accentSolid} />
+        </View>
+      );
+    }
+
+    if (error) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyTitle}>Couldn't load your favourites</Text>
+          <Text style={styles.emptySubtitle}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => {
+              setLoading(true);
+              load();
+            }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.retryText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (favorites.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Heart size={48} color={colors.textTertiary} style={{ marginBottom: 12 }} />
+          <Text style={styles.emptyTitle}>No favourites yet</Text>
+          <Text style={styles.emptySubtitle}>
+            Tap the heart on any product and it will be saved here.
+          </Text>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => navigation.navigate('Search')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.retryText}>Find a product</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return favorites.map((item) => (
+      <TouchableOpacity
+        key={item.id}
+        style={styles.card}
+        activeOpacity={0.9}
+        onPress={() =>
+          navigation.navigate('ProductDetail', {
+            id: item.storeListingId,
+            productName: item.title,
+            currentPrice: item.price !== null ? formatPrice(item.price) : '',
+            imageUrl: item.imageUrl,
+          })
+        }
+      >
+        {item.imageUrl ? (
+          <Image source={{ uri: item.imageUrl }} style={styles.dealImage} resizeMode="contain" />
+        ) : (
+          <View style={[styles.dealImage, styles.dealImageEmpty]} />
+        )}
+
+        <View style={styles.detailsContainer}>
+          <View style={styles.nameRow}>
+            <Text style={styles.productName} numberOfLines={2}>
+              {item.title ?? 'Product no longer listed'}
+            </Text>
+            <TouchableOpacity
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              onPress={() => handleRemove(item)}
+              disabled={removingId === item.id}
+            >
+              <Ionicons name="heart" size={22} color={colors.danger} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.middleRow}>
+            <Text style={styles.statusText}>
+              {item.storeName ? `On ${item.storeName}` : 'Saved'}
+            </Text>
+          </View>
+
+          <View style={styles.priceRow}>
+            <Text style={styles.price}>
+              {item.price !== null ? formatPrice(item.price) : '—'}
+            </Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    ));
+  };
 
   return (
     <>
@@ -66,79 +206,26 @@ export default function FavoritesScreen() {
           </TouchableOpacity>
         </LinearGradient>
 
-        {/* Tab Filters */}
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'all' && styles.tabActive]}
-            onPress={() => setActiveTab('all')}
-          >
-            <Text style={[styles.tabText, activeTab === 'all' && styles.tabTextActive]}>
-              All ({favorites.length})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'dropped' && styles.tabActive]}
-            onPress={() => setActiveTab('dropped')}
-          >
-            <Text style={[styles.tabText, activeTab === 'dropped' && styles.tabTextActive]}>
-              Price dropped ({droppedCount})
-            </Text>
-          </TouchableOpacity>
-        </View>
+        {/* The "Price dropped" tab is gone: it filtered on a priceDrop field the
+            local store invented and the API has no equivalent for. Showing a
+            drop needs the previous price, which belongs with the alert checker
+            that watches for one. */}
 
-        <ScrollView contentContainerStyle={styles.scrollList} showsVerticalScrollIndicator={false}>
-          {filteredFavorites.map((item) => {
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.card}
-                activeOpacity={0.9}
-                onPress={() => navigation.navigate('ProductDetail', { productName: item.name, currentPrice: item.price })}
-              >
-                <Image
-                  source={{ uri: `https://picsum.photos/seed/${item.name.replace(/\s/g, '')}/300/300` }}
-                  style={styles.dealImage}
-                  resizeMode="cover"
-                />
-
-                <View style={styles.detailsContainer}>
-                  <View style={styles.nameRow}>
-                    <Text style={styles.productName} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    <TouchableOpacity
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      onPress={() => toggleFavorite({ name: item.name, price: item.price })}
-                    >
-                      <Ionicons name="heart" size={22} color={colors.danger} />
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.middleRow}>
-                    {item.priceDrop ? (
-                      <View style={styles.priceDropBadge}>
-                        <Text style={styles.priceDropText}>{item.priceDrop}</Text>
-                      </View>
-                    ) : (
-                      <Text style={styles.statusText}>{item.statusText || 'Watching on 3 stores'}</Text>
-                    )}
-                  </View>
-
-                  <View style={styles.priceRow}>
-                    <Text style={styles.price}>{item.price}</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-
-          {filteredFavorites.length === 0 && (
-            <View style={styles.emptyContainer}>
-              <Heart size={48} color={colors.textTertiary} style={{ marginBottom: 12 }} />
-              <Text style={styles.emptyTitle}>No Favorites Found</Text>
-              <Text style={styles.emptySubtitle}>Items you save will appear here</Text>
-            </View>
-          )}
+        <ScrollView
+          contentContainerStyle={styles.scrollList}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                load();
+              }}
+              tintColor={colors.accentSolid}
+            />
+          }
+        >
+          {renderBody()}
         </ScrollView>
       </SafeAreaView>
 
@@ -149,11 +236,17 @@ export default function FavoritesScreen() {
           if (dest === 'Home') navigation.navigate('Home');
           else if (dest === 'Search') navigation.navigate('Search');
           else if (dest === 'Favorites') navigation.navigate('Favorites');
-          else if (dest === 'Price Alerts' || dest === 'Notifications' || dest === 'Alerts') navigation.navigate('Alerts');
+          else if (dest === 'Price Alerts' || dest === 'Notifications' || dest === 'Alerts')
+            navigation.navigate('Alerts');
           else if (dest === 'Profile' || dest === 'Account') navigation.navigate('Account');
           else if (dest === 'Settings') navigation.navigate('Settings');
-          else if (dest === 'Help & Support' || dest === 'HelpSupport' || dest === 'Help') navigation.navigate('HelpSupport');
-          else if (['Electronics', 'Fashion', 'Home & Living', 'Beauty', 'Appliances', 'Mobiles', 'Categories'].includes(dest)) {
+          else if (dest === 'Help & Support' || dest === 'HelpSupport' || dest === 'Help')
+            navigation.navigate('HelpSupport');
+          else if (
+            ['Electronics', 'Fashion', 'Home & Living', 'Beauty', 'Appliances', 'Mobiles', 'Categories'].includes(
+              dest,
+            )
+          ) {
             navigation.navigate('Category', { categoryKey: 'mobiles_tablets' });
           }
         }}
@@ -163,10 +256,7 @@ export default function FavoritesScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+  root: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -189,113 +279,63 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tabContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    gap: 12,
-    marginTop: 18,
-    marginBottom: 18,
-  },
-  tab: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: radii.pill,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  tabActive: {
-    backgroundColor: '#0E6B4F', // Solid brand green matches All (6) active tab design
-    borderColor: '#0E6B4F',
-  },
-  tabText: {
-    fontSize: 14,
-    fontFamily: fonts.label,
-    color: colors.textSecondary,
-  },
-  tabTextActive: {
-    color: '#FFFFFF',
-  },
-  scrollList: {
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-    gap: 16,
-  },
+
+  scrollList: { padding: 16, paddingBottom: 40 },
+
   card: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: radii.medium + 4,
-    padding: 14,
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radii.medium,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    marginBottom: 12,
     ...shadows.card,
   },
   dealImage: {
-    width: 80,
-    height: 80,
+    width: 76,
+    height: 76,
     borderRadius: radii.small,
-    marginRight: 14,
-    backgroundColor: colors.accentTint,
+    backgroundColor: colors.background,
   },
-  detailsContainer: {
-    flex: 1,
-    justifyContent: 'space-between',
-    paddingVertical: 2,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
+  dealImageEmpty: { borderWidth: 1, borderColor: colors.border },
+  detailsContainer: { flex: 1, justifyContent: 'space-between' },
+  nameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   productName: {
-    fontSize: 15,
-    fontFamily: fonts.label,
-    color: colors.textPrimary,
     flex: 1,
-    marginRight: 10,
-  },
-  middleRow: {
-    marginVertical: 4,
-  },
-  priceDropBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#D97706',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  priceDropText: {
-    fontSize: 11,
-    fontFamily: fonts.button,
-    color: '#FFFFFF',
-  },
-  statusText: {
-    fontSize: 12,
-    fontFamily: fonts.body,
-    color: colors.textTertiary,
-  },
-  priceRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  price: {
-    fontSize: 16,
-    fontFamily: fonts.monoEmphasis,
-    color: '#0E6B4F',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-  },
-  emptyTitle: {
-    fontSize: 18,
+    fontSize: 14,
     fontFamily: fonts.label,
+    fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: 4,
+    lineHeight: 19,
+  },
+  middleRow: { marginTop: 4 },
+  statusText: { fontSize: 12, fontFamily: fonts.body, color: colors.textSecondary },
+  priceRow: { marginTop: 6 },
+  price: { fontSize: 15, fontFamily: fonts.mono, color: colors.textPrimary },
+
+  emptyContainer: { alignItems: 'center', paddingTop: 70, paddingHorizontal: 24 },
+  emptyTitle: {
+    fontSize: 17,
+    fontFamily: fonts.headlineBold,
+    color: colors.textPrimary,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   emptySubtitle: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontFamily: fonts.body,
     color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
   },
+  retryBtn: {
+    backgroundColor: colors.accentSolid,
+    borderRadius: radii.medium,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  retryText: { color: '#FFFFFF', fontFamily: fonts.button, fontSize: 13.5 },
 });

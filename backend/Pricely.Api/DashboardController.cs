@@ -93,22 +93,27 @@ public class DashboardController : ControllerBase
 
         var topSearches = searchRows.Select(x => new RankedItem(x.Label, x.Count)).ToList();
 
+        // Alerts hang off listings, not products — almost nothing is merged, so
+        // grouping by ProductId put every alert under a null key and the name
+        // lookup came back empty, printing "Unknown".
         var trackedRows = await _db.PriceAlerts
-            .GroupBy(a => a.ProductId)
-            .Select(g => new { ProductId = g.Key, Count = g.Count() })
+            .Where(a => a.StoreListingId != null)
+            .GroupBy(a => a.StoreListingId!.Value)
+            .Select(g => new { StoreListingId = g.Key, Count = g.Count() })
             .OrderByDescending(x => x.Count)
             .Take(3)
             .ToListAsync(ct);
 
-        var trackedIds = trackedRows.Select(x => x.ProductId).ToList();
-        var trackedNames = await _db.Products
-            .Where(p => trackedIds.Contains(p.Id))
-            .Select(p => new { p.Id, p.Name })
+        var trackedIds = trackedRows.Select(x => x.StoreListingId).ToList();
+
+        var trackedNames = await _db.StoreListings
+            .Where(l => trackedIds.Contains(l.Id))
+            .Select(l => new { l.Id, Name = l.RawTitle })
             .ToListAsync(ct);
 
         var mostTracked = trackedRows
             .Select(x => new RankedItem(
-                trackedNames.FirstOrDefault(n => n.Id == x.ProductId)?.Name ?? "Unknown",
+                trackedNames.FirstOrDefault(n => n.Id == x.StoreListingId)?.Name ?? "Unknown",
                 x.Count))
             .ToList();
 

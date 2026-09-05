@@ -60,7 +60,11 @@ export default function ProductDetailScreen() {
   const currentPrice = formatPrice(rawPrice);
   const images = detail?.images && detail.images.length > 0 ? detail.images : fallbackImage ? [fallbackImage] : [];
 
-  const isFav = isFavorited(productName);
+  // Favourites live on the server now, keyed by listing. The local store kept
+  // them by product name, which meant they vanished with the app and could
+  // never be matched to anything the price checker could watch.
+  const [isFav, setIsFav] = useState(false);
+  const [favBusy, setFavBusy] = useState(false);
   const existingAlert = alerts.find((a) => a.name === productName && a.active);
   const [alertPrice, setAlertPrice] = useState(existingAlert ? existingAlert.targetPrice.replace(/[^0-9]/g, '') : '50000');
   const alertActive = !!existingAlert;
@@ -194,6 +198,7 @@ export default function ProductDetailScreen() {
     }
 
     try {
+      console.log('[ALERT] listingId:', numListingId, 'target:', target);
       await api.setAlert(numListingId, target);
       addAlert({ name: productName, targetPrice: String(target), currentPrice });
       setSuccessMessage(
@@ -224,10 +229,43 @@ export default function ProductDetailScreen() {
     }, [navigation])
   );
 
-  const handleLike = () => {
-    toggleFavorite({ name: productName, price: currentPrice });
-    if (!isFav) {
-      navigation.navigate('Favorites');
+  // Ask the server whether this listing is already favourited, so the heart
+  // is right the moment the screen opens rather than after the first tap.
+  useEffect(() => {
+    const numListingId = listingId ? Number(listingId) : undefined;
+    if (!numListingId) return;
+    let alive = true;
+    api
+      .favorites()
+      .then((res) => {
+        if (alive) setIsFav(res.items.some((f) => f.storeListingId === numListingId));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [listingId]);
+
+  const handleLike = async () => {
+    const numListingId = listingId ? Number(listingId) : undefined;
+    if (favBusy) return;
+    if (!numListingId) {
+      console.warn('[FAV] no listingId — route params:', JSON.stringify(route.params));
+      return;
+    }
+
+    setFavBusy(true);
+    const next = !isFav;
+    // Flip first: a heart that waits on the network feels broken.
+    setIsFav(next);
+    try {
+      if (next) await api.addFavorite(numListingId);
+      else await api.removeFavorite(numListingId);
+    } catch (err) {
+      console.warn('[FAV] failed:', err);
+      setIsFav(!next);
+    } finally {
+      setFavBusy(false);
     }
   };
 

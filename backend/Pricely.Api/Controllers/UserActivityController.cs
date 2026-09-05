@@ -33,7 +33,7 @@ public class UserActivityController : ControllerBase
 
     // ── Favourites ────────────────────────────────────────────────────────
 
-    public record FavoriteRequest(long ProductId);
+    public record FavoriteRequest(long StoreListingId);
 
     [HttpGet("favorites")]
     public async Task<IActionResult> ListFavorites(CancellationToken ct)
@@ -41,7 +41,18 @@ public class UserActivityController : ControllerBase
         var items = await _db.Favorites
             .Where(f => f.UserId == _me.Id)
             .OrderByDescending(f => f.CreatedAt)
-            .Select(f => new { f.ProductId, f.CreatedAt })
+            .Select(f => new
+            {
+                f.Id,
+                f.StoreListingId,
+                f.ProductId,
+                f.CreatedAt,
+                Title      = f.StoreListing != null ? f.StoreListing.RawTitle : null,
+                Price      = f.StoreListing != null ? f.StoreListing.Price : (decimal?)null,
+                ImageUrl   = f.StoreListing != null ? f.StoreListing.ImageUrl : null,
+                StoreName  = f.StoreListing != null ? f.StoreListing.Store.Name : null,
+                ProductUrl = f.StoreListing != null ? f.StoreListing.ProductUrl : null
+            })
             .ToListAsync(ct);
 
         return Ok(new { items });
@@ -50,34 +61,37 @@ public class UserActivityController : ControllerBase
     [HttpPost("favorites")]
     public async Task<IActionResult> AddFavorite([FromBody] FavoriteRequest req, CancellationToken ct)
     {
-        var productExists = await _db.Products.AnyAsync(p => p.Id == req.ProductId, ct);
-        if (!productExists)
-            return NotFound(new { code = "product_not_found", message = "That product no longer exists." });
+        var listing = await _db.StoreListings
+            .FirstOrDefaultAsync(l => l.Id == req.StoreListingId, ct);
+
+        if (listing is null)
+            return NotFound(new { code = "listing_not_found", message = "That product is no longer listed." });
 
         // Favouriting twice is a no-op rather than an error: the app may retry,
         // and a double tap should not surface a failure to the shopper.
         var already = await _db.Favorites
-            .AnyAsync(f => f.UserId == _me.Id && f.ProductId == req.ProductId, ct);
+            .AnyAsync(f => f.UserId == _me.Id && f.StoreListingId == listing.Id, ct);
 
         if (!already)
         {
             _db.Favorites.Add(new Favorite
             {
-                UserId    = _me.Id,
-                ProductId = req.ProductId,
-                CreatedAt = DateTimeOffset.UtcNow
+                UserId         = _me.Id,
+                StoreListingId = listing.Id,
+                ProductId      = listing.ProductId,
+                CreatedAt      = DateTimeOffset.UtcNow
             });
             await _db.SaveChangesAsync(ct);
         }
 
-        return Ok(new { favorited = true, productId = req.ProductId });
+        return Ok(new { favorited = true, storeListingId = listing.Id });
     }
 
-    [HttpDelete("favorites/{productId:long}")]
-    public async Task<IActionResult> RemoveFavorite(long productId, CancellationToken ct)
+    [HttpDelete("favorites/{storeListingId:long}")]
+    public async Task<IActionResult> RemoveFavorite(long storeListingId, CancellationToken ct)
     {
         var row = await _db.Favorites
-            .FirstOrDefaultAsync(f => f.UserId == _me.Id && f.ProductId == productId, ct);
+            .FirstOrDefaultAsync(f => f.UserId == _me.Id && f.StoreListingId == storeListingId, ct);
 
         if (row is not null)
         {
@@ -85,17 +99,15 @@ public class UserActivityController : ControllerBase
             await _db.SaveChangesAsync(ct);
         }
 
-        return Ok(new { favorited = false, productId });
+        return Ok(new { favorited = false, storeListingId });
     }
 
     // ── Price alerts ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// The alert hangs off a listing, not a product. Only a handful of
-    /// listings have ever been merged into products, so requiring a product
-    /// would mean a shopper could not watch almost anything in the catalogue.
-    /// The product id is stored too when the listing has one, so a later check
-    /// can look across every store carrying the same thing.
+    /// The alert hangs off a listing, not a product. Only a handful of listings
+    /// have ever been merged into products, so requiring a product would mean a
+    /// shopper could not watch almost anything in the catalogue.
     /// </summary>
     public record AlertRequest(long StoreListingId, decimal TargetPrice);
 
@@ -130,9 +142,7 @@ public class UserActivityController : ControllerBase
         if (req.TargetPrice <= 0)
             return BadRequest(new { code = "invalid_target", message = "Enter a target price above zero." });
 
-        var listing = await _db.StoreListings
-            .FirstOrDefaultAsync(l => l.Id == req.StoreListingId, ct);
-
+        var listing = await _db.StoreListings.FirstOrDefaultAsync(l => l.Id == req.StoreListingId, ct);
         if (listing is null)
             return NotFound(new { code = "listing_not_found", message = "That product is no longer listed." });
 
@@ -170,9 +180,7 @@ public class UserActivityController : ControllerBase
     [HttpDelete("alerts/{id:long}")]
     public async Task<IActionResult> RemoveAlert(long id, CancellationToken ct)
     {
-        var row = await _db.PriceAlerts
-            .FirstOrDefaultAsync(a => a.Id == id && a.UserId == _me.Id, ct);
-
+        var row = await _db.PriceAlerts.FirstOrDefaultAsync(a => a.Id == id && a.UserId == _me.Id, ct);
         if (row is not null)
         {
             _db.PriceAlerts.Remove(row);

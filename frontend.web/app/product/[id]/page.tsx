@@ -184,9 +184,9 @@ function ProductDetailContent({
                 </span>
               </div>
 
-              {detail?.url && (
+              {(detail?.url || urlParam) && (
                 <a
-                  href={detail.url}
+                  href={detail?.url || urlParam || '#'}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#1D9A7C] hover:bg-[#0E6B4F] text-white font-bold text-xs shadow-sm transition-all"
@@ -248,14 +248,14 @@ function ProductDetailContent({
           <p className="text-xs sm:text-sm text-slate-700 leading-relaxed whitespace-pre-line">
             {detail.description}
           </p>
-        ) : storeName.toLowerCase().includes('daraz') ? (
+        ) : (
           <div className="bg-orange-50 border border-orange-200 rounded-xl p-5 text-center space-y-3">
             <Info size={24} className="text-orange-500 mx-auto" />
             <p className="text-xs text-orange-800 font-medium">
-              Daraz product description and buyer reviews are available directly on Daraz.
+              View complete product details, full specifications, key features, and verified customer reviews on Daraz.pk.
             </p>
             <a
-              href={detail?.viewOnStoreUrl || detail?.url || '#'}
+              href={detail?.viewOnStoreUrl || detail?.url || urlParam || '#'}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#F57224] hover:bg-orange-600 text-white font-bold text-xs shadow-xs transition-colors"
@@ -264,10 +264,6 @@ function ProductDetailContent({
               <ExternalLink size={14} />
             </a>
           </div>
-        ) : (
-          <p className="text-xs text-slate-400 italic">
-            Full specification details for this product are hosted at {storeName}.
-          </p>
         )}
       </div>
     </div>

@@ -25,7 +25,7 @@ const getIcon = (name: string) => {
 
 export default function AlertsScreen() {
   const navigation = useNavigation<any>();
-  const { alerts, toggleAlertActive, addAlert, loadAlerts } = useUserStore();
+  const { alerts, setAlertActive, addAlert, loadAlerts } = useUserStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
 
@@ -165,7 +165,7 @@ export default function AlertsScreen() {
 
                   <Switch
                     value={item.active}
-                    onValueChange={() => toggleAlertActive(item.id)}
+                    onValueChange={(next) => setAlertActive(item.id, next).catch(() => {})}
                     trackColor={{ false: '#767577', true: '#0E6B4F' }}
                     thumbColor={item.active ? '#FFFFFF' : '#f4f3f4'}
                   />

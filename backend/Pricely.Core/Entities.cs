@@ -217,6 +217,14 @@ public class PriceAlert
     /// </summary>
     public bool IsTriggered { get; set; }
 
+    /// <summary>
+    /// False means the shopper switched it off. Kept and still listed, but
+    /// never fired. The Alerts screen has always had this switch; until now
+    /// it changed nothing outside the app's memory.
+    /// Added by db/010_alert_paused.sql.
+    /// </summary>
+    public bool IsActive { get; set; } = true;
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? TriggeredAt { get; set; }
 

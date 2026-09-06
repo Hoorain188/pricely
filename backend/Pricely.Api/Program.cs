@@ -266,15 +266,23 @@ builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TeamService>();
 builder.Services.AddScoped<MonitoredSyncService>();
+builder.Services.AddScoped<WeeklySummaryService>();
 
 // Real mail is the default. The console fallback is only allowed while
 // developing and only when Gmail genuinely isn't configured yet, so a
 // misconfigured deployment fails loudly instead of silently sending nothing.
 var email = builder.Configuration.GetSection(EmailOptions.SectionName).Get<EmailOptions>() ?? new EmailOptions();
-var emailConfigured = !string.IsNullOrWhiteSpace(email.FromAddress)
-                      && !string.IsNullOrWhiteSpace(email.SmtpPassword);
+var smtpConfigured = !string.IsNullOrWhiteSpace(email.FromAddress)
+                     && !string.IsNullOrWhiteSpace(email.SmtpPassword);
 
-if (emailConfigured)
+if (!string.IsNullOrWhiteSpace(email.ResendApiKey))
+{
+    // Preferred wherever it is configured. Resend goes over HTTPS, and hosts
+    // block outbound SMTP — which is why signup and invites failed on Render
+    // while working from a laptop.
+    builder.Services.AddScoped<IEmailSender, ResendEmailSender>();
+}
+else if (smtpConfigured)
 {
     builder.Services.AddScoped<IEmailSender, GmailEmailSender>();
 }
@@ -285,7 +293,8 @@ else if (builder.Environment.IsDevelopment())
 else
 {
     throw new InvalidOperationException(
-        "Email:FromAddress and Email:SmtpPassword must be set outside Development. " +
+        "Configure email before deploying: set Email:ResendApiKey (recommended — SMTP is " +
+        "blocked on most hosts), or Email:FromAddress with Email:SmtpPassword. " +
         "See backend/README.md.");
 }
 
@@ -380,11 +389,21 @@ app.UseExceptionHandler(errorApp =>
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-if (!emailConfigured)
+if (!string.IsNullOrWhiteSpace(email.ResendApiKey))
+{
+    app.Logger.LogInformation("Email goes out through Resend over HTTPS.");
+}
+else if (smtpConfigured)
 {
     app.Logger.LogWarning(
-        "Gmail is not configured — verification codes will be printed to this console " +
-        "instead of emailed. Set Email:FromAddress and Email:SmtpPassword to send real mail.");
+        "Email goes out over SMTP, which most hosts block outbound — expect sends to fail " +
+        "once deployed. Set Email:ResendApiKey to send over HTTPS instead.");
+}
+else
+{
+    app.Logger.LogWarning(
+        "Email is not configured — verification codes will be printed to this console " +
+        "instead of sent. Set Email:ResendApiKey to send real mail.");
 }
 
 if (app.Environment.IsDevelopment())
@@ -448,6 +467,12 @@ try
     // Deduplication har roz raat 2 baje khud chale (sab syncs ke baad)
     RecurringJob.AddOrUpdate<DeduplicationService>(
         "deduplication", s => s.RunDeduplicationAsync(), "0 2 * * *");
+
+    // The weekly back-office digest, Monday 08:00 UTC. This is what makes the
+    // weekly_summary_email and new_reports toggles mean anything — both were
+    // saved by the settings screen and read by nothing.
+    RecurringJob.AddOrUpdate<WeeklySummaryService>(
+        "weekly-summary", s => s.SendWeeklySummaryAsync(), "0 8 * * 1");
 }
 catch (Exception ex)
 {

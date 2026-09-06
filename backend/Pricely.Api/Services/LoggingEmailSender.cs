@@ -46,6 +46,14 @@ public class LoggingEmailSender : IEmailSender
         return Task.CompletedTask;
     }
 
+    public Task SendNoticeAsync(
+        string toEmail, string subject, string heading, string body, CancellationToken ct = default)
+    {
+        _logger.LogWarning("[EMAIL NOT SENT — dev fallback] NOTICE to {Email}: {Subject} — {Body}",
+            toEmail, subject, body);
+        return Task.CompletedTask;
+    }
+
     private void Write(string kind, string toEmail, string code) =>
         _logger.LogWarning(
             "[EMAIL NOT SENT — dev fallback] {Kind} code for {Email} is {Code}",

@@ -19,7 +19,7 @@ function toStoreAlert(a: ServerAlert): PriceAlert {
       : remaining > 0
         ? `${rupees(remaining)} to go`
         : 'Target reached!',
-    active: !a.isTriggered,
+    active: a.isActive,
   };
 }
 
@@ -65,6 +65,13 @@ interface UserStoreState {
 
   /** Removes it on the server, then locally. */
   deleteAlert: (id: string) => Promise<void>;
+
+  /**
+   * Pauses or re-arms an alert on the server. toggleAlertActive only flipped
+   * a value in this object, so a "paused" alert still fired and the switch
+   * reset itself the next time the screen opened.
+   */
+  setAlertActive: (id: string, active: boolean) => Promise<void>;
 
   /** Pulls this account's favourites from the server. */
   loadFavorites: () => Promise<void>;
@@ -191,6 +198,13 @@ export const useUserStore = create<UserStoreState>((set, get) => ({
         favorites: [{ id: key, name: listing.name, price: listing.price }, ...get().favorites],
       });
     }
+  },
+
+  setAlertActive: async (id, active) => {
+    await api.setAlertActive(Number(id), active);
+    set({
+      alerts: get().alerts.map((a) => (a.id === id ? { ...a, active } : a)),
+    });
   },
 
   deleteAlert: async (id) => {

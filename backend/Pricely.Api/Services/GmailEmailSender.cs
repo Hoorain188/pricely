@@ -75,6 +75,10 @@ public class GmailEmailSender : IEmailSender
             "You're getting this because you set a price alert. Turn these off in Settings.");
     }
 
+    public Task SendNoticeAsync(
+        string toEmail, string subject, string heading, string body, CancellationToken ct = default)
+        => SendAsync(toEmail, subject, body, "", heading, body, ct, "Pricely back office");
+
     private async Task SendAsync(
         string toEmail,
         string subject,

@@ -26,4 +26,14 @@ public interface IEmailSender
         string toEmail, string productTitle, string storeName,
         decimal currentPrice, decimal targetPrice, string? productUrl,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// A plain notice with no code and no highlighted value — the weekly
+    /// back-office summary, and anything else of that shape. Kept separate
+    /// from the code emails so a summary does not have to pretend a number is
+    /// a verification code to get rendered.
+    /// </summary>
+    Task SendNoticeAsync(
+        string toEmail, string subject, string heading, string body,
+        CancellationToken ct = default);
 }

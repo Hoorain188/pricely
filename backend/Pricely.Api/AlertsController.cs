@@ -37,6 +37,7 @@ public class AlertsController : ControllerBase
         decimal CurrentPrice,
         decimal TargetPrice,
         bool IsTriggered,
+        bool IsActive,
         DateTimeOffset CreatedAt,
         DateTimeOffset? TriggeredAt,
         string? ImageUrl);
@@ -61,6 +62,7 @@ public class AlertsController : ControllerBase
             a.StoreListing?.Price ?? 0,
             a.TargetPrice,
             a.IsTriggered,
+            a.IsActive,
             a.CreatedAt,
             a.TriggeredAt,
             a.StoreListing?.ImageUrl)).ToList());
@@ -109,6 +111,7 @@ public class AlertsController : ControllerBase
             ProductId = null,
             TargetPrice = req.TargetPrice,
             IsTriggered = false,
+            IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow
         };
 
@@ -116,6 +119,35 @@ public class AlertsController : ControllerBase
         await _db.SaveChangesAsync(ct);
 
         return Ok(ToDto(alert, listing));
+    }
+
+    public record SetActiveRequest(bool IsActive);
+
+    /// <summary>
+    /// Switches an alert off without deleting it — the toggle on the Alerts
+    /// screen, which until now changed nothing but a value in the app's
+    /// memory, so a "paused" alert still fired.
+    /// </summary>
+    [HttpPatch("{id:long}")]
+    public async Task<IActionResult> SetActive(long id, SetActiveRequest req, CancellationToken ct)
+    {
+        var alert = await _db.PriceAlerts
+            .FirstOrDefaultAsync(a => a.Id == id && a.UserId == _me.Id, ct);
+
+        if (alert is null) return NotFound();
+
+        alert.IsActive = req.IsActive;
+
+        // Switching one back on re-arms it, so a drop that happened while it
+        // was off is announced next time rather than being missed for good.
+        if (req.IsActive && alert.IsTriggered)
+        {
+            alert.IsTriggered = false;
+            alert.TriggeredAt = null;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
     }
 
     /// <summary>Stops watching.</summary>
@@ -133,5 +165,5 @@ public class AlertsController : ControllerBase
 
     private static AlertDto ToDto(PriceAlert a, StoreListing l) => new(
         a.Id, a.StoreListingId, l.RawTitle, l.Store.Name,
-        l.Price, a.TargetPrice, a.IsTriggered, a.CreatedAt, a.TriggeredAt, l.ImageUrl);
+        l.Price, a.TargetPrice, a.IsTriggered, a.IsActive, a.CreatedAt, a.TriggeredAt, l.ImageUrl);
 }

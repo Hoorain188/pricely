@@ -17,4 +17,16 @@ public class EmailOptions
     /// it belongs in user-secrets locally and an env var in deployment.
     /// </summary>
     public string SmtpPassword { get; set; } = "";
+
+    /// <summary>
+    /// Resend's API key. When set, mail goes over HTTPS through Resend and
+    /// SMTP is not used at all — which is the point: hosts block outbound
+    /// SMTP, and nothing blocks HTTPS. Gmail's settings above are then
+    /// ignored except FromAddress and FromName.
+    ///
+    /// Set it with:
+    ///   dotnet user-secrets set "Email:ResendApiKey" "re_..."
+    /// or as the Email__ResendApiKey environment variable when deployed.
+    /// </summary>
+    public string ResendApiKey { get; set; } = "";
 }

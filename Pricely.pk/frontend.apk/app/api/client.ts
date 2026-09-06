@@ -247,6 +247,7 @@ export interface ServerAlert {
   currentPrice: number;
   targetPrice: number;
   isTriggered: boolean;
+  isActive: boolean;
   createdAt: string;
   triggeredAt: string | null;
   imageUrl: string | null;
@@ -263,6 +264,13 @@ export const api = {
     request<ServerAlert>('/me/alerts', {
       method: 'POST',
       body: JSON.stringify({ storeListingId, targetPrice }),
+    }),
+
+  /** Pauses or re-arms an alert without deleting it. */
+  setAlertActive: (id: number, isActive: boolean) =>
+    request<void>(`/me/alerts/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
     }),
 
   deleteAlert: (id: number) => request<void>(`/me/alerts/${id}`, { method: 'DELETE' }),

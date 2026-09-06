@@ -39,6 +39,7 @@ public class PriceAlertChecker : IPriceAlertChecker
         // Telemart scrape says nothing about a Mega.pk price.
         var due = await _db.PriceAlerts
             .Where(a => !a.IsTriggered
+                     && a.IsActive
                      && a.StoreListingId != null
                      && a.StoreListing!.StoreId == storeId
                      && a.StoreListing.Price > 0

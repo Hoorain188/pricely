@@ -267,6 +267,46 @@ export const api = {
 
   deleteAlert: (id: number) => request<void>(`/me/alerts/${id}`, { method: 'DELETE' }),
 
+  // ── Favourites ──
+  // The endpoints existed and the app never called them, so favourites lived
+  // in memory and were gone when it closed. They took a product id, which
+  // almost nothing browsable has; listings work now.
+  listFavorites: () =>
+    request<{
+      items: {
+        id: number;
+        productId: number | null;
+        storeListingId: number | null;
+        title: string;
+        storeName: string | null;
+        price: number | null;
+        imageUrl: string | null;
+        createdAt: string;
+      }[];
+    }>('/favorites'),
+
+  addFavorite: (storeListingId: number) =>
+    request<void>('/favorites', {
+      method: 'POST',
+      body: JSON.stringify({ storeListingId }),
+    }),
+
+  removeFavorite: (storeListingId: number) =>
+    request<void>(`/favorites/${storeListingId}?listing=true`, { method: 'DELETE' }),
+
+  // ── The signed-in shopper's notification preferences ──
+  // Distinct from /admin/me/notifications, which is scraper and report
+  // toggles behind the back-office policy — a shopper gets 403 there, which
+  // is why this screen had nowhere to save to.
+  myNotificationPrefs: () =>
+    request<{ priceAlertsPush: boolean; priceAlertsEmail: boolean }>('/me/notifications'),
+
+  updateMyNotificationPrefs: (priceAlertsPush: boolean, priceAlertsEmail: boolean) =>
+    request<{ priceAlertsPush: boolean; priceAlertsEmail: boolean }>('/me/notifications', {
+      method: 'PATCH',
+      body: JSON.stringify({ priceAlertsPush, priceAlertsEmail }),
+    }),
+
   logSearch: (queryText: string) =>
     request<void>('/searches', { method: 'POST', body: JSON.stringify({ queryText }) }),
   logStoreClick: (url: string) =>

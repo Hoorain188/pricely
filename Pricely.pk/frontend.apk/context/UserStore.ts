@@ -66,6 +66,15 @@ interface UserStoreState {
   /** Removes it on the server, then locally. */
   deleteAlert: (id: string) => Promise<void>;
 
+  /** Pulls this account's favourites from the server. */
+  loadFavorites: () => Promise<void>;
+
+  /**
+   * Favourites a listing on the server. toggleFavorite only ever knew a
+   * product name, so nothing was stored anywhere but this object.
+   */
+  toggleFavoriteListing: (listing: { id: number; name: string; price: string }) => Promise<void>;
+
   alertsLoading: boolean;
   alertsError: string | null;
 }
@@ -150,6 +159,38 @@ export const useUserStore = create<UserStoreState>((set, get) => ({
   createAlert: async (storeListingId, targetPrice) => {
     const created = await api.createAlert(storeListingId, targetPrice);
     set({ alerts: [toStoreAlert(created), ...get().alerts] });
+  },
+
+  loadFavorites: async () => {
+    try {
+      const { items } = await api.listFavorites();
+      set({
+        favorites: items.map((f) => ({
+          id: String(f.storeListingId ?? f.productId ?? f.id),
+          name: f.title,
+          price: f.price != null ? rupees(f.price) : '',
+        })),
+      });
+    } catch {
+      // Keep whatever is on screen. Emptying the list on a failed refresh
+      // would read as "your favourites are gone".
+    }
+  },
+
+  toggleFavoriteListing: async (listing) => {
+    const key = String(listing.id);
+    const exists = get().favorites.some((f) => f.id === key);
+
+    // Server first, so the heart never shows a state the server disagrees with.
+    if (exists) {
+      await api.removeFavorite(listing.id);
+      set({ favorites: get().favorites.filter((f) => f.id !== key) });
+    } else {
+      await api.addFavorite(listing.id);
+      set({
+        favorites: [{ id: key, name: listing.name, price: listing.price }, ...get().favorites],
+      });
+    }
   },
 
   deleteAlert: async (id) => {

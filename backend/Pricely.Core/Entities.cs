@@ -166,11 +166,29 @@ public class StoreClick
 
 public class Favorite
 {
+    /// <summary>
+    /// The table gained a surrogate key when favourites were extended to
+    /// listings: the old composite (user_id, product_id) cannot express "one
+    /// row per user per listing", and two listing favourites for the same
+    /// person both have product_id null, which would collide.
+    /// </summary>
+    public long Id { get; set; }
+
     public long UserId { get; set; }
-    public long ProductId { get; set; }
+
+    /// <summary>Set when favouriting a matched product across every store.</summary>
+    public long? ProductId { get; set; }
+
+    /// <summary>
+    /// Set when favouriting one store's listing, which is what shoppers can
+    /// actually tap — almost nothing is matched into a product yet.
+    /// </summary>
+    public long? StoreListingId { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
-    public Product Product { get; set; } = null!;
+    public Product? Product { get; set; }
+    public StoreListing? StoreListing { get; set; }
 }
 
 public class PriceAlert

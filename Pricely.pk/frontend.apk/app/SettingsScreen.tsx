@@ -9,6 +9,7 @@ import LottieBackButton from '../components/Lottiebackbutton';
 import CustomAlertDialog from '../components/CustomAlertDialog';
 import Sidebar from '../components/Sidebar';
 import LottieHamburger from '../components/LottieHamburger';
+import { api } from './api/client';
 
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
@@ -17,6 +18,7 @@ export default function SettingsScreen() {
   const [selectedTheme, setSelectedTheme] = useState<'system' | 'light' | 'dark'>('system');
   const [selectedCurrency, setSelectedCurrency] = useState<'PKR' | 'USD'>('PKR');
   const [saveSuccessVisible, setSaveSuccessVisible] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('Preferences saved successfully.');
   const [menuOpen, setMenuOpen] = useState(false);
 
   const handleBack = () => {
@@ -40,7 +42,36 @@ export default function SettingsScreen() {
     return () => subscription.remove();
   }, [navigation, menuOpen]);
 
-  const handleSaveSettings = () => {
+  // These two decide whether a price alert actually reaches you, so they
+  // belong on the server: it is the server that sends them. Kept in local
+  // state alone, as they were, the switches moved and nothing else happened.
+  React.useEffect(() => {
+    let cancelled = false;
+    api
+      .myNotificationPrefs()
+      .then((prefs) => {
+        if (cancelled) return;
+        setPriceDrops(prefs.priceAlertsPush);
+        setEmailAlerts(prefs.priceAlertsEmail);
+      })
+      .catch(() => {
+        // Leave the switches at their defaults, both on. Nothing is saved
+        // until Save is pressed, so a failed read cannot silently turn
+        // someone's notifications off.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSaveSettings = async () => {
+    try {
+      await api.updateMyNotificationPrefs(priceDrops, emailAlerts);
+      setSaveMessage('Preferences saved successfully.');
+    } catch (error: any) {
+      // Saying "saved" when nothing was is the bug this screen already had.
+      setSaveMessage(error?.message ?? 'Could not save your preferences. Please try again.');
+    }
     setSaveSuccessVisible(true);
   };
 
@@ -170,7 +201,7 @@ export default function SettingsScreen() {
       <CustomAlertDialog
         visible={saveSuccessVisible}
         title="Success"
-        message="Preferences saved successfully."
+        message={saveMessage}
         confirmText="OK"
         onConfirm={() => {
           setSaveSuccessVisible(false);

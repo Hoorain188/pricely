@@ -40,7 +40,10 @@ public class AppDbContext : DbContext
         // Declaring them here as well causes duplicate model configuration.
 
         // Composite / non-standard keys
-        b.Entity<Favorite>().HasKey(f => new { f.UserId, f.ProductId });
+        // favorites is keyed on its own id. It used to be (user_id, product_id),
+        // and leaving that here after the table changed meant EF and Postgres
+        // disagreed about what identified a row.
+        b.Entity<Favorite>().HasKey(f => f.Id);
         b.Entity<MatchGroupListing>().HasKey(m => new { m.MatchGroupId, m.StoreListingId });
         b.Entity<UserNotificationSettings>().HasKey(s => s.UserId);
 

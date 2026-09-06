@@ -33,7 +33,13 @@ public class UserActivityController : ControllerBase
 
     // ── Favourites ────────────────────────────────────────────────────────
 
-    public record FavoriteRequest(long ProductId);
+    /// <summary>
+    /// Either identifier. StoreListingId is the one the app can supply —
+    /// browse returns listings, and only 24 of them are matched into a
+    /// product, so requiring ProductId meant almost every tap answered
+    /// "product_not_found".
+    /// </summary>
+    public record FavoriteRequest(long? ProductId, long? StoreListingId);
 
     [HttpGet("favorites")]
     public async Task<IActionResult> ListFavorites(CancellationToken ct)
@@ -41,7 +47,17 @@ public class UserActivityController : ControllerBase
         var items = await _db.Favorites
             .Where(f => f.UserId == _me.Id)
             .OrderByDescending(f => f.CreatedAt)
-            .Select(f => new { f.ProductId, f.CreatedAt })
+            .Select(f => new
+            {
+                f.Id,
+                f.ProductId,
+                f.StoreListingId,
+                f.CreatedAt,
+                Title = f.StoreListing != null ? f.StoreListing.RawTitle : f.Product!.Name,
+                StoreName = f.StoreListing != null ? f.StoreListing.Store.Name : null,
+                Price = f.StoreListing != null ? f.StoreListing.Price : (decimal?)null,
+                ImageUrl = f.StoreListing != null ? f.StoreListing.ImageUrl : f.Product!.ImageUrl
+            })
             .ToListAsync(ct);
 
         return Ok(new { items });
@@ -50,34 +66,53 @@ public class UserActivityController : ControllerBase
     [HttpPost("favorites")]
     public async Task<IActionResult> AddFavorite([FromBody] FavoriteRequest req, CancellationToken ct)
     {
-        var productExists = await _db.Products.AnyAsync(p => p.Id == req.ProductId, ct);
-        if (!productExists)
-            return NotFound(new { code = "product_not_found", message = "That product no longer exists." });
+        if ((req.ProductId is null) == (req.StoreListingId is null))
+            return BadRequest(new { code = "bad_request", message = "Send exactly one of productId or storeListingId." });
+
+        if (req.StoreListingId is not null)
+        {
+            var listingExists = await _db.StoreListings.AnyAsync(l => l.Id == req.StoreListingId, ct);
+            if (!listingExists)
+                return NotFound(new { code = "listing_not_found", message = "That product is no longer listed." });
+        }
+        else
+        {
+            var productExists = await _db.Products.AnyAsync(p => p.Id == req.ProductId, ct);
+            if (!productExists)
+                return NotFound(new { code = "product_not_found", message = "That product no longer exists." });
+        }
 
         // Favouriting twice is a no-op rather than an error: the app may retry,
         // and a double tap should not surface a failure to the shopper.
-        var already = await _db.Favorites
-            .AnyAsync(f => f.UserId == _me.Id && f.ProductId == req.ProductId, ct);
+        var already = await _db.Favorites.AnyAsync(
+            f => f.UserId == _me.Id
+              && f.ProductId == req.ProductId
+              && f.StoreListingId == req.StoreListingId, ct);
 
         if (!already)
         {
             _db.Favorites.Add(new Favorite
             {
-                UserId    = _me.Id,
-                ProductId = req.ProductId,
-                CreatedAt = DateTimeOffset.UtcNow
+                UserId         = _me.Id,
+                ProductId      = req.ProductId,
+                StoreListingId = req.StoreListingId,
+                CreatedAt      = DateTimeOffset.UtcNow
             });
             await _db.SaveChangesAsync(ct);
         }
 
-        return Ok(new { favorited = true, productId = req.ProductId });
+        return Ok(new { favorited = true, productId = req.ProductId, storeListingId = req.StoreListingId });
     }
 
-    [HttpDelete("favorites/{productId:long}")]
-    public async Task<IActionResult> RemoveFavorite(long productId, CancellationToken ct)
+    /// <summary>
+    /// Takes a product id for backwards compatibility, or a listing id via
+    /// ?listing=true — the app deals in listings.
+    /// </summary>
+    [HttpDelete("favorites/{id:long}")]
+    public async Task<IActionResult> RemoveFavorite(long id, [FromQuery] bool listing, CancellationToken ct)
     {
-        var row = await _db.Favorites
-            .FirstOrDefaultAsync(f => f.UserId == _me.Id && f.ProductId == productId, ct);
+        var row = await _db.Favorites.FirstOrDefaultAsync(
+            f => f.UserId == _me.Id && (listing ? f.StoreListingId == id : f.ProductId == id), ct);
 
         if (row is not null)
         {
@@ -85,7 +120,7 @@ public class UserActivityController : ControllerBase
             await _db.SaveChangesAsync(ct);
         }
 
-        return Ok(new { favorited = false, productId });
+        return Ok(new { favorited = false, id, listing });
     }
 
     // ── Store click-throughs ──────────────────────────────────────────────

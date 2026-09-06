@@ -35,6 +35,17 @@ public class LoggingEmailSender : IEmailSender
         return Task.CompletedTask;
     }
 
+    public Task SendPriceAlertAsync(
+        string toEmail, string productTitle, string storeName,
+        decimal currentPrice, decimal targetPrice, string? productUrl,
+        CancellationToken ct = default)
+    {
+        _logger.LogWarning(
+            "[EMAIL NOT SENT — dev fallback] PRICE ALERT for {Email}: {Product} is Rs {Price} at {Store} (target Rs {Target})",
+            toEmail, productTitle, currentPrice, storeName, targetPrice);
+        return Task.CompletedTask;
+    }
+
     private void Write(string kind, string toEmail, string code) =>
         _logger.LogWarning(
             "[EMAIL NOT SENT — dev fallback] {Kind} code for {Email} is {Code}",

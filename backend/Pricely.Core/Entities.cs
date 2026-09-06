@@ -177,11 +177,33 @@ public class PriceAlert
 {
     public long Id { get; set; }
     public long UserId { get; set; }
-    public long ProductId { get; set; }
+
+    /// <summary>
+    /// Watches every store selling a matched product. Null when the alert is
+    /// on a single listing instead — exactly one of the two is set, which the
+    /// database enforces. Added by db/008_alerts_on_listings.sql.
+    /// </summary>
+    public long? ProductId { get; set; }
+
+    /// <summary>
+    /// Watches one store's price for one listing. This is what shoppers
+    /// actually set, since almost nothing is matched into a product yet.
+    /// </summary>
+    public long? StoreListingId { get; set; }
+
     public decimal TargetPrice { get; set; }
+
+    /// <summary>
+    /// Set once the price has been at or below the target and the shopper has
+    /// been told. Kept so the same drop is not announced on every scrape.
+    /// </summary>
     public bool IsTriggered { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? TriggeredAt { get; set; }
+
+    public StoreListing? StoreListing { get; set; }
+    public Product? Product { get; set; }
 }
 
 /// <summary>Covers BOTH team invites and inbound access requests, distinguished by Type.</summary>
@@ -264,9 +286,22 @@ public class Session
 public class UserNotificationSettings
 {
     public long UserId { get; set; }
+
+    // Back-office concerns; the admin settings screen owns these.
     public bool NewReports { get; set; }
     public bool SyncFailures { get; set; }
     public bool WeeklySummaryEmail { get; set; }
+
+    /// <summary>
+    /// Shopper concerns. Both default to true — someone who sets a price
+    /// alert has asked to be told when it hits, so silence is the deliberate
+    /// choice, not the default. A user with no row at all is treated the same
+    /// way: enabled. Added by db/009_user_notification_prefs.sql.
+    /// </summary>
+    public bool PriceAlertsPush { get; set; } = true;
+
+    /// <summary>Independent of push, because a phone can be off or have notifications refused.</summary>
+    public bool PriceAlertsEmail { get; set; } = true;
 }
 
 /// <summary>
@@ -281,6 +316,33 @@ public class UserNotificationSettings
 /// signup leaves only a row here, which expires and is cleared.
 /// Added by db/006_pending_signups.sql.
 /// </summary>
+/// <summary>
+/// A device that has agreed to receive notifications, and the address to
+/// reach it on. Nothing can be sent to someone with no row here.
+/// Added by db/007_push_tokens.sql.
+/// </summary>
+public class PushToken
+{
+    public long Id { get; set; }
+    public long UserId { get; set; }
+
+    /// <summary>
+    /// Issued by Expo, e.g. "ExponentPushToken[xxxxxxxx]". Identifies the
+    /// device, not the person — signing in as someone else on the same phone
+    /// moves this row rather than adding another, or the previous account
+    /// would keep receiving that device's notifications.
+    /// </summary>
+    public string Token { get; set; } = "";
+
+    public string? Platform { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>Last time Expo accepted a send. Stale rows are findable by this.</summary>
+    public DateTimeOffset? LastUsedAt { get; set; }
+
+    public User User { get; set; } = null!;
+}
+
 public class PendingSignup
 {
     public long Id { get; set; }

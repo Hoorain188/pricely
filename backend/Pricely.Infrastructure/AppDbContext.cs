@@ -32,6 +32,7 @@ public class AppDbContext : DbContext
     public DbSet<UserNotificationSettings> UserNotificationSettings => Set<UserNotificationSettings>();
     public DbSet<VerificationCode> VerificationCodes => Set<VerificationCode>();
     public DbSet<PendingSignup> PendingSignups => Set<PendingSignup>();
+    public DbSet<PushToken> PushTokens => Set<PushToken>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {

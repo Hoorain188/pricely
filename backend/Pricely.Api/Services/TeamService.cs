@@ -21,17 +21,20 @@ public class TeamService
     private readonly IActivityLogger _activity;
     private readonly IEmailSender _email;
     private readonly ITokenService _tokens;
+    private readonly ILogger<TeamService> _logger;
 
     public TeamService(
         AppDbContext db,
         IActivityLogger activity,
         IEmailSender email,
-        ITokenService tokens)
+        ITokenService tokens,
+        ILogger<TeamService> logger)
     {
         _db = db;
         _activity = activity;
         _email = email;
         _tokens = tokens;
+        _logger = logger;
     }
 
     // ── Reading ──────────────────────────────────────────────────────────
@@ -188,11 +191,31 @@ public class TeamService
             new { email, role = role.ToWire() });
 
         await _db.SaveChangesAsync(ct);
-        await _email.SendTeamInviteAsync(email, rawToken, role.ToWire(), ct);
+
+        // The invite row is already committed, so letting a send failure throw
+        // would return 500 to the admin while leaving a pending invite behind —
+        // and the next attempt would then be refused as "already invited",
+        // with no way to get the code to the person. Outbound SMTP is blocked
+        // on the current host, so this is the normal path, not a rare one.
+        //
+        // The raw token goes back to the admin who just created it instead, so
+        // it can be passed on by hand. They are the same person the email was
+        // going to be visible to anyway.
+        string? shareToken = null;
+        try
+        {
+            await _email.SendTeamInviteAsync(email, rawToken, role.ToWire(), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Invite email to {Email} failed; returning the token to the inviter", email);
+            shareToken = rawToken;
+        }
 
         return new TeamRequestView(
             request.Id, request.Email, request.Name, request.RequestedRole.ToWire(),
-            request.Type.ToWire(), request.Status.ToWire(), request.CreatedAt, request.ExpiresAt);
+            request.Type.ToWire(), request.Status.ToWire(), request.CreatedAt, request.ExpiresAt,
+            shareToken);
     }
 
     public async Task RevokeInviteAsync(long actorId, long requestId, CancellationToken ct)

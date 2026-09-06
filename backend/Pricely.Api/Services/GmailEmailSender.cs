@@ -46,6 +46,35 @@ public class GmailEmailSender : IEmailSender
             $"You've been invited as <strong>{role}</strong>. Enter this code in the app to set up your account. It expires in 7 days.",
             ct);
 
+    /// <summary>
+    /// Reuses the code layout, with the new price where the code normally
+    /// goes — it is the one number the reader is looking for, and it belongs
+    /// in the same prominent slot.
+    /// </summary>
+    public Task SendPriceAlertAsync(
+        string toEmail, string productTitle, string storeName,
+        decimal currentPrice, decimal targetPrice, string? productUrl,
+        CancellationToken ct = default)
+    {
+        var price = $"Rs {currentPrice:N0}";
+        var target = $"Rs {targetPrice:N0}";
+        var link = string.IsNullOrWhiteSpace(productUrl)
+            ? ""
+            : $"<p style=\"margin:18px 0 0\"><a href=\"{productUrl}\">View it at {storeName}</a></p>";
+
+        return SendAsync(
+            toEmail,
+            $"Price drop: {productTitle}",
+            $"{productTitle} is now {price} at {storeName}. You asked to be told when it reached {target}."
+                + (string.IsNullOrWhiteSpace(productUrl) ? "" : $" {productUrl}"),
+            price,
+            "The price dropped",
+            $"<strong>{productTitle}</strong> is now {price} at {storeName}. "
+                + $"You asked to be told when it reached {target}.{link}",
+            ct,
+            "You're getting this because you set a price alert. Turn these off in Settings.");
+    }
+
     private async Task SendAsync(
         string toEmail,
         string subject,
@@ -53,7 +82,8 @@ public class GmailEmailSender : IEmailSender
         string code,
         string heading,
         string blurb,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? footer = null)
     {
         if (string.IsNullOrWhiteSpace(_options.FromAddress) || string.IsNullOrWhiteSpace(_options.SmtpPassword))
         {
@@ -71,7 +101,7 @@ public class GmailEmailSender : IEmailSender
         message.Body = new BodyBuilder
         {
             TextBody = plainBody,
-            HtmlBody = BuildHtml(heading, blurb, code)
+            HtmlBody = BuildHtml(heading, blurb, code, footer)
         }.ToMessageBody();
 
         using var client = new SmtpClient();
@@ -118,7 +148,7 @@ public class GmailEmailSender : IEmailSender
         }
     }
 
-    private static string BuildHtml(string heading, string blurb, string code)
+    private static string BuildHtml(string heading, string blurb, string code, string? footer = null)
     {
         // A 6-digit code reads well big and widely spaced; a 64-character invite
         // token does not — it needs to wrap instead of overflowing the email.
@@ -127,7 +157,7 @@ public class GmailEmailSender : IEmailSender
             ? "font-size:32px;font-weight:700;letter-spacing:8px;text-align:center"
             : "font-size:14px;font-weight:600;text-align:center;word-break:break-all;line-height:1.5";
 
-        var footer = isShortCode
+        footer ??= isShortCode
             ? "This code expires in 15 minutes."
             : "This invite expires in 7 days.";
 

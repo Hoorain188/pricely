@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Pricely.Core.Entities;
 using Pricely.Infrastructure;
 
 namespace Pricely.Api.Services;
@@ -78,6 +79,20 @@ public class MonitoredSyncService
 
             _logger.LogInformation("{Store} sync mukammal. Total: {Total} (naye: {New})",
                 store.Name, afterCount, scraped);
+
+            // Prices have just moved, so this is the moment to see whether any
+            // shopper was waiting for one of them. Its own try/catch: a
+            // notification that cannot be sent must not turn a successful
+            // scrape into a failed one.
+            try
+            {
+                var checker = scope.ServiceProvider.GetRequiredService<IPriceAlertChecker>();
+                await checker.CheckStoreAsync(store.Id);
+            }
+            catch (Exception alertEx)
+            {
+                _logger.LogError(alertEx, "{Store} ke price alerts check nahi ho sake", store.Name);
+            }
         }
         catch (Exception ex)
         {
@@ -92,6 +107,29 @@ public class MonitoredSyncService
                     SET status = {0}::scraper_run_status, error_message = {1}, finished_at = {2}
                     WHERE id = {3};",
                     "fail", msg, DateTime.UtcNow, runId);
+            }
+
+            // Tell the back office, but only those who asked to hear about it —
+            // that is what the sync_failures toggle on the settings screen was
+            // always meant to control, and until now nothing read it.
+            try
+            {
+                var watchers = await db.UserNotificationSettings
+                    .Where(s => s.SyncFailures)
+                    .Join(db.Users.Where(u => u.IsActive && u.Role != UserRole.User),
+                          s => s.UserId, u => u.Id, (s, u) => u.Id)
+                    .ToListAsync();
+
+                var push = scope.ServiceProvider.GetRequiredService<IPushSender>();
+                await push.SendToUsersAsync(
+                    watchers,
+                    "Scraper failed",
+                    $"The {store.Name} sync did not finish. Check the dashboard.",
+                    new { type = "sync_failure", storeId = store.Id });
+            }
+            catch (Exception notifyEx)
+            {
+                _logger.LogError(notifyEx, "Sync failure ki ittila nahi bhej sake");
             }
         }
     }

@@ -238,7 +238,35 @@ export interface ReportsResponse {
 
 // -------------------------------------------------------------- calls
 
+/** A price alert as the server keeps it. Prices are numbers here, not "Rs 1,234". */
+export interface ServerAlert {
+  id: number;
+  storeListingId: number | null;
+  title: string;
+  storeName: string;
+  currentPrice: number;
+  targetPrice: number;
+  isTriggered: boolean;
+  createdAt: string;
+  triggeredAt: string | null;
+  imageUrl: string | null;
+}
+
 export const api = {
+  // ── Price alerts ──
+  // These used to live only in the app's memory, so they vanished when it
+  // closed and the server never knew to watch anything. They are rows now,
+  // and the scraper checks them after every run.
+  listAlerts: () => request<ServerAlert[]>('/me/alerts'),
+
+  createAlert: (storeListingId: number, targetPrice: number) =>
+    request<ServerAlert>('/me/alerts', {
+      method: 'POST',
+      body: JSON.stringify({ storeListingId, targetPrice }),
+    }),
+
+  deleteAlert: (id: number) => request<void>(`/me/alerts/${id}`, { method: 'DELETE' }),
+
   logSearch: (queryText: string) =>
     request<void>('/searches', { method: 'POST', body: JSON.stringify({ queryText }) }),
   logStoreClick: (url: string) =>

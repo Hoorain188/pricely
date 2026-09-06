@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import * as authService from '../services/authService';
 import { setApiAuthToken } from '../app/api/client';
+import { registerPushToken, unregisterPushToken } from '../services/pushNotifications';
 
 // ── Types ──
 export interface User {
@@ -54,10 +55,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // admin call goes out unauthenticated and comes back 401.
     setApiAuthToken(token);
     set({ user, token, refreshToken: nextRefresh, isAuthenticated: true });
+
+    // Register this device for notifications. Deliberately not awaited: it
+    // asks the OS for permission, which puts a dialog in front of someone who
+    // has just signed in, and nothing about signing in should wait on their
+    // answer. It handles its own failures and never throws.
+    void registerPushToken(token);
   },
 
   clearAuth: async () => {
-    const { refreshToken } = get();
+    const { refreshToken, token } = get();
+
+    // Before the token is thrown away, since unregistering needs it. Without
+    // this the next person to sign in on this phone keeps receiving the
+    // previous one's price alerts.
+    if (token) await unregisterPushToken(token);
 
     // Tell the server to revoke this device's session. Best-effort: if the
     // API is unreachable we still sign out locally rather than trapping
@@ -111,6 +123,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             isAuthenticated: true,
             isLoading: false,
           });
+
+          // Re-register on every launch. The OS reissues push tokens — after
+          // a reinstall, a restore to a new phone, sometimes an app update —
+          // and the server would otherwise keep sending to an address that
+          // stopped existing. Registering an unchanged token is a no-op.
+          void registerPushToken(renewed.accessToken);
           return;
         } catch (error) {
           // A rejected refresh token means the session is genuinely over

@@ -37,7 +37,7 @@ const STORE_COLORS: Record<string, { bg: string; domain: string }> = {
 export default function ProductDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
-  const { toggleFavorite, isFavorited, addAlert, alerts } = useUserStore();
+  const { toggleFavorite, isFavorited, createAlert, alerts } = useUserStore();
 
   const handle = route.params?.handle || '';
   const productUrl = route.params?.url || '';
@@ -175,9 +175,28 @@ export default function ProductDetailScreen() {
     }
   };
 
-  const handleSetAlert = () => {
-    addAlert({ name: productName, targetPrice: alertPrice, currentPrice });
-    setSuccessMessage(`We will notify you once ${productName} drops below Rs ${Number(alertPrice).toLocaleString()}`);
+  const handleSetAlert = async () => {
+    // The listing id is what makes an alert real: the server watches one
+    // store's price for one listing. addAlert only ever knew a product name,
+    // so nothing could be checked against an actual price, and the alert
+    // disappeared when the app closed.
+    const numListingId = listingId ? Number(listingId) : 0;
+    const target = Number(String(alertPrice).replace(/[^0-9.]/g, ''));
+
+    if (!numListingId || !target) {
+      setSuccessMessage("This product can't be tracked yet. Try opening it from search or browse.");
+      setSaveSuccessVisible(true);
+      return;
+    }
+
+    try {
+      await createAlert(numListingId, target);
+      setSuccessMessage(`We will notify you once ${productName} drops below Rs ${target.toLocaleString()}`);
+    } catch (error: any) {
+      // The server refuses a target that is already met, among other things,
+      // and its message says why — better than a generic failure.
+      setSuccessMessage(error?.message ?? 'Could not set that alert. Please try again.');
+    }
     setSaveSuccessVisible(true);
   };
 

@@ -243,6 +243,11 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<IActivityLogger, ActivityLogger>();
 
+// Notifications. Push goes over HTTPS to Expo, so unlike the emailed
+// verification codes it is not affected by outbound SMTP being blocked.
+builder.Services.AddScoped<IPushSender, PushSender>();
+builder.Services.AddScoped<IPriceAlertChecker, PriceAlertChecker>();
+
 // Scrapers (moved from PriceCompare.Api)
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("ScraperClient", client =>

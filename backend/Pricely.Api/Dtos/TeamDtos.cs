@@ -20,7 +20,15 @@ public record TeamRequestView(
     string Type,
     string Status,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? ExpiresAt);
+    DateTimeOffset? ExpiresAt,
+
+    /// <summary>
+    /// The raw invite code, returned ONLY when the invite email could not be
+    /// sent, so the admin who created it can pass it on another way. Null on
+    /// every other response, including every listing — this is not a field to
+    /// read an existing invite's code out of.
+    /// </summary>
+    string? ShareToken = null);
 
 /// <summary>
 /// Roles an admin is allowed to hand out. Deliberately excludes User: the

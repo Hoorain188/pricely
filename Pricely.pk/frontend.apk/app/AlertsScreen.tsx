@@ -25,7 +25,7 @@ const getIcon = (name: string) => {
 
 export default function AlertsScreen() {
   const navigation = useNavigation<any>();
-  const { alerts, toggleAlertActive, addAlert } = useUserStore();
+  const { alerts, toggleAlertActive, addAlert, loadAlerts } = useUserStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
 
@@ -36,6 +36,13 @@ export default function AlertsScreen() {
       navigation.navigate('Home');
     }
   };
+
+  // Alerts live on the server now, not in this store's memory, so the screen
+  // has to ask for them. Without this it opens empty every time, however many
+  // alerts the account actually has.
+  React.useEffect(() => {
+    loadAlerts();
+  }, [loadAlerts]);
 
   React.useEffect(() => {
     const onBackPress = () => {

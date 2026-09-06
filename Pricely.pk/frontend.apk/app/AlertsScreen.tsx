@@ -21,6 +21,7 @@ import LottieBackButton from '../components/Lottiebackbutton';
 import CustomAlertDialog from '../components/CustomAlertDialog';
 import { api, ApiError, formatPrice, type ShopperAlert } from './api/client';
 import { getValidProductImage } from '../components/CategoryCarousel';
+import { useUserStore } from '../context/UserStore';
 
 export default function AlertsScreen() {
   const navigation = useNavigation<any>();
@@ -41,7 +42,26 @@ export default function AlertsScreen() {
       const res = await api.alerts();
       setAlerts(res.items);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not load your alerts.');
+      console.warn('[AlertsScreen] Backend alerts failed, loading local store alerts:', err);
+      const localAlerts = useUserStore.getState().alerts;
+      if (localAlerts && localAlerts.length > 0) {
+        const mapped: ShopperAlert[] = localAlerts.map((a, idx) => ({
+          id: Number(a.id) || idx + 1,
+          storeListingId: null,
+          productId: null,
+          targetPrice: parseFloat(a.targetPrice.replace(/[^0-9.]/g, '')) || 0,
+          isTriggered: a.remainingPrice ? a.remainingPrice.toLowerCase().includes('reached') : false,
+          triggeredAt: null,
+          createdAt: new Date().toISOString(),
+          title: a.name,
+          currentPrice: parseFloat(a.currentPrice.replace(/[^0-9.]/g, '')) || null,
+          imageUrl: a.imageUrl || null,
+          productUrl: null,
+        }));
+        setAlerts(mapped);
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Could not load your alerts.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

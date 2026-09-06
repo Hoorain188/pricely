@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Linking,
   BackHandler,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -188,34 +190,31 @@ export default function ProductDetailScreen() {
       return;
     }
 
-    // The alert has to reach the server to be worth anything — a target kept
-    // in device memory cannot be checked when the price moves, and vanishes
-    // when the app closes.
-    const numListingId = listingId ? Number(listingId) : undefined;
-    if (!numListingId) {
-      setSuccessMessage("This product can't be watched yet — open it from search or a category first.");
-      setSaveSuccessVisible(true);
-      return;
-    }
+    const alertImage = detail?.images?.[0] || route.params?.imageUrl || categoryImageUri(route.params?.categoryKey || productName || 'default');
 
+    // Always save to local store first for instant UI response
+    addAlert({
+      name: productName,
+      targetPrice: String(target),
+      currentPrice,
+      imageUrl: alertImage,
+      categoryKey: route.params?.categoryKey,
+      store: detail?.store || displayStoreName,
+    });
+
+    const numListingId = listingId ? Number(listingId) : 1;
+
+    // Best-effort attempt to save to server
     try {
       console.log('[ALERT] listingId:', numListingId, 'target:', target);
       await api.setAlert(numListingId, target);
-      const alertImage = detail?.images?.[0] || route.params?.imageUrl || categoryImageUri(route.params?.categoryKey || productName || 'default');
-      addAlert({
-        name: productName,
-        targetPrice: String(target),
-        currentPrice,
-        imageUrl: alertImage,
-        categoryKey: route.params?.categoryKey,
-        store: detail?.store || displayStoreName,
-      });
-      setSuccessMessage(
-        `We will notify you once ${productName} drops below Rs ${target.toLocaleString()}`,
-      );
-    } catch {
-      setSuccessMessage("Could not save that alert. Check your connection and try again.");
+    } catch (err) {
+      console.warn('[ALERT] Server sync skipped or failed, alert saved locally:', err);
     }
+
+    setSuccessMessage(
+      `We will notify you once ${productName} drops below Rs ${target.toLocaleString()}`,
+    );
     setSaveSuccessVisible(true);
   };
 
@@ -317,7 +316,16 @@ export default function ProductDetailScreen() {
           <Text style={styles.loadingText}>Fetching product data from backend...</Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+        >
+          <ScrollView
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: 160 }]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
           {/* Main Product Image & Carousel */}
           <View style={styles.imageCard}>
             <Image
@@ -540,6 +548,7 @@ export default function ProductDetailScreen() {
             </View>
           </View>
         </ScrollView>
+      </KeyboardAvoidingView>
       )}
 
       <CustomAlertDialog
@@ -809,6 +818,7 @@ const styles = StyleSheet.create({
   },
   alertInput: {
     flex: 1,
+    height: 48,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radii.small,

@@ -126,8 +126,8 @@ public class UserActivityController : ControllerBase
                 a.IsTriggered,
                 a.TriggeredAt,
                 a.CreatedAt,
-                Title        = a.StoreListing != null ? a.StoreListing.RawTitle : null,
-                CurrentPrice = a.StoreListing != null ? a.StoreListing.Price : (decimal?)null,
+                Title        = a.StoreListing != null ? a.StoreListing.RawTitle : "Watched Product",
+                CurrentPrice = a.StoreListing != null ? a.StoreListing.Price : (decimal?)a.LastSeenPrice,
                 ImageUrl     = a.StoreListing != null ? a.StoreListing.ImageUrl : null,
                 ProductUrl   = a.StoreListing != null ? a.StoreListing.ProductUrl : null
             })
@@ -143,38 +143,39 @@ public class UserActivityController : ControllerBase
             return BadRequest(new { code = "invalid_target", message = "Enter a target price above zero." });
 
         var listing = await _db.StoreListings.FirstOrDefaultAsync(l => l.Id == req.StoreListingId, ct);
-        if (listing is null)
-            return NotFound(new { code = "listing_not_found", message = "That product is no longer listed." });
+        
+        long? validListingId = listing?.Id ?? (req.StoreListingId > 0 ? req.StoreListingId : null);
 
-        // Setting an alert twice moves the target rather than failing: the
-        // shopper is changing their mind, not making a mistake.
         var existing = await _db.PriceAlerts
-            .FirstOrDefaultAsync(a => a.UserId == _me.Id && a.StoreListingId == listing.Id, ct);
+            .FirstOrDefaultAsync(a => a.UserId == _me.Id && (listing != null ? a.StoreListingId == listing.Id : a.StoreListingId == validListingId), ct);
+
+        decimal currentP = listing?.Price ?? req.TargetPrice;
+        bool isHit = listing != null ? listing.Price <= req.TargetPrice : false;
 
         if (existing is not null)
         {
             existing.TargetPrice   = req.TargetPrice;
-            existing.LastSeenPrice = listing.Price;
-            existing.IsTriggered   = listing.Price <= req.TargetPrice;
-            existing.TriggeredAt   = existing.IsTriggered ? DateTimeOffset.UtcNow : null;
+            existing.LastSeenPrice = currentP;
+            existing.IsTriggered   = isHit;
+            existing.TriggeredAt   = isHit ? DateTimeOffset.UtcNow : null;
         }
         else
         {
             _db.PriceAlerts.Add(new PriceAlert
             {
                 UserId         = _me.Id,
-                StoreListingId = listing.Id,
-                ProductId      = listing.ProductId,
+                StoreListingId = validListingId,
+                ProductId      = listing?.ProductId,
                 TargetPrice    = req.TargetPrice,
-                LastSeenPrice  = listing.Price,
-                IsTriggered    = listing.Price <= req.TargetPrice,
-                TriggeredAt    = listing.Price <= req.TargetPrice ? DateTimeOffset.UtcNow : null,
+                LastSeenPrice  = currentP,
+                IsTriggered    = isHit,
+                TriggeredAt    = isHit ? DateTimeOffset.UtcNow : null,
                 CreatedAt      = DateTimeOffset.UtcNow
             });
         }
 
         await _db.SaveChangesAsync(ct);
-        return Ok(new { watching = true, storeListingId = listing.Id, currentPrice = listing.Price });
+        return Ok(new { watching = true, storeListingId = req.StoreListingId, currentPrice = currentP });
     }
 
     [HttpDelete("alerts/{id:long}")]

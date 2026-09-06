@@ -61,7 +61,10 @@ public class DashboardController : ControllerBase
             {
                 var run = latestRuns.FirstOrDefault(r => r.StoreId == s.Id);
                 var status = run is null            ? "fail"
-                           : run.FinishedAt is null ? "running"
+                           // A run left open for hours is not running, it died.
+                           // Without this the Re-run button stays disabled forever.
+                           : run.FinishedAt is null
+                               ? (run.StartedAt > DateTimeOffset.UtcNow.AddMinutes(-20) ? "running" : "fail")
                            : run.Status == ScraperRunStatus.Ok ? "ok" : "fail";
 
                 var liveItemCount = listingCounts.FirstOrDefault(l => l.StoreId == s.Id)?.Count ?? 0;
@@ -75,7 +78,10 @@ public class DashboardController : ControllerBase
             .ToList();
 
         var recentErrors = recentRuns
-            .Where(r => r.Status == ScraperRunStatus.Fail && r.ErrorMessage != null)
+            // Three-week-old failures were still top of the list. If it has not
+            // recurred in a week it is history, not a problem.
+            .Where(r => r.Status == ScraperRunStatus.Fail && r.ErrorMessage != null
+                     && r.StartedAt >= weekAgo)
             .Take(5)
             .Select(r => new ScraperErrorDto(
                 allStores.FirstOrDefault(s => s.Id == r.StoreId)?.Name ?? "Unknown",

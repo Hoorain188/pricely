@@ -324,6 +324,15 @@ export default function AdminDuplicatesScreen() {
             merged.map((p) => (
               <View key={p.id} style={styles.card}>
                 <View style={styles.mergedRow}>
+                  {p.listings[0]?.imageUrl ? (
+                    <Image
+                      source={{ uri: p.listings[0].imageUrl! }}
+                      style={styles.listingThumb}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <View style={[styles.listingThumb, styles.listingThumbEmpty]} />
+                  )}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.productTitle}>{p.title}</Text>
                     <Text style={styles.collapsedMeta}>
@@ -358,7 +367,9 @@ const styles = StyleSheet.create({
   listingThumb: { width: 34, height: 34, borderRadius: 6, backgroundColor: colors.background },
   listingThumbEmpty: { borderWidth: 1, borderColor: colors.border },
   root: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 40 },
+  // Titles sat under the status bar. Android reports no safe-area inset here,
+  // so the clearance is explicit rather than left to SafeAreaView.
+  content: { padding: 20, paddingTop: 52, paddingBottom: 40 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, backgroundColor: colors.background },
   errorTitle: { fontSize: 15, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
   errorBody: { fontSize: 12.5, fontFamily: fonts.body, color: colors.textSecondary, textAlign: 'center', marginBottom: 16 },
@@ -424,7 +435,7 @@ const styles = StyleSheet.create({
   },
   rejectBtnText: { fontSize: 12, fontFamily: fonts.button, color: colors.danger },
   collapsedMeta: { fontSize: 11, fontFamily: fonts.body, color: colors.textTertiary, marginTop: 3 },
-  mergedRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  mergedRow: { gap: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   splitBtn: { borderWidth: 1.3, borderColor: colors.border, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 13 },
   splitBtnText: { fontSize: 11.5, fontFamily: fonts.button, color: colors.textSecondary },
   footnote: { fontSize: 11, fontFamily: fonts.body, color: colors.textTertiary, textAlign: 'center', marginTop: 4 },

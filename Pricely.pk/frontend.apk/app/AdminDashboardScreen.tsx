@@ -3,6 +3,8 @@ import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
+import { Users, Package, Activity, Bell } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import StatTile from '../components/StatTile';
 import StatusPill from '../components/StatusPill';
 import BarRow from '../components/BarRow';
@@ -13,6 +15,15 @@ import { api, timeAgo, toBarRows, ApiError, type DashboardResponse } from './api
 
 interface AdminDashboardScreenProps {
   navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void };
+}
+
+// Local device time, which is what the person reading it is living in.
+function greetingForHour(hour: number): string {
+  if (hour < 5) return 'Good night';
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  if (hour < 21) return 'Good evening';
+  return 'Good night';
 }
 
 export default function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) {
@@ -114,7 +125,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
-      <Text style={styles.greeting}>Good morning</Text>
+      <Text style={styles.greeting}>{greetingForHour(new Date().getHours())}</Text>
       <Text style={styles.name}>{user?.name ?? 'Admin'}</Text>
       <View style={styles.updatedBadge}>
         <Text style={styles.updatedText}>
@@ -126,18 +137,21 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
         <StatTile
           value={kpis.totalUsers.value.toLocaleString()}
           label="Total users"
+          icon={Users}
           trend={trend(kpis.totalUsers)}
           onPress={() => navigation.navigate('Users')}
         />
         <StatTile
           value={kpis.productsTracked.value.toLocaleString()}
           label="Products tracked"
+          icon={Package}
           trend={trend(kpis.productsTracked)}
           onPress={() => navigation.navigate('AllProducts')}
         />
         <StatTile
           value={`${kpis.scrapersHealthy} / ${kpis.scrapersTotal}`}
           label="Scrapers healthy"
+          icon={Activity}
           trend={failingCount > 0 ? `${failingCount} failing` : 'all healthy'}
           warn={failingCount > 0}
           onPress={() => scrollRef.current?.scrollTo({ y: 320, animated: true })}
@@ -145,6 +159,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
         <StatTile
           value={kpis.activeAlerts.value.toLocaleString()}
           label="Active alerts"
+          icon={Bell}
           trend={trend(kpis.activeAlerts)}
           onPress={() => navigation.navigate('AllAlerts')}
         />
@@ -162,6 +177,14 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
               key={s.storeId}
               style={[styles.scraperRow, s.status === 'fail' && styles.scraperRowFail]}
             >
+              {/* Ties the list back to the tiles above — same sweep, four pixels of it. */}
+              <LinearGradient
+                colors={['#0E6B4F', '#16855F', '#1E8F72', '#4AA3D8']}
+                locations={[0, 0.45, 0.7, 1]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={styles.scraperStripe}
+              />
               <TouchableOpacity
                 onPress={() => navigation.navigate('StoreListings', { store: s.storeName })}
               >
@@ -249,7 +272,9 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 40 },
+  // Titles sat under the status bar. Android reports no safe-area inset here,
+  // so the clearance is explicit rather than left to SafeAreaView.
+  content: { padding: 20, paddingTop: 52, paddingBottom: 40 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, backgroundColor: colors.background },
   errorTitle: { fontSize: 15, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
   errorBody: { fontSize: 12.5, fontFamily: fonts.body, color: colors.textSecondary, textAlign: 'center', marginBottom: 16 },
@@ -280,7 +305,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radii.medium,
     padding: 13,
+    overflow: 'hidden',
+    paddingLeft: 17,
   },
+  scraperStripe: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
   scraperRowFail: { borderColor: colors.danger },
   scraperName: { fontSize: 13, fontFamily: fonts.label, color: colors.textPrimary },
   scraperMeta: { fontSize: 10.5, fontFamily: fonts.body, color: colors.textTertiary, marginTop: 2 },

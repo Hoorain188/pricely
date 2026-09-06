@@ -38,7 +38,29 @@ public class AppDbContext : DbContext
         // Declaring them here as well causes duplicate model configuration.
 
         // Composite / non-standard keys
-        b.Entity<Favorite>().HasKey(f => new { f.UserId, f.ProductId });
+        // Favourites hang off a listing now, so ProductId is null for almost
+        // every row — and a null cannot sit in a primary key. The composite key
+        // was replaced with an id in the database; this has to match, or EF
+        // refuses to save with "the value of Favorite.ProductId is unknown".
+        b.Entity<Favorite>().HasKey(f => f.Id);
+
+        b.Entity<Favorite>()
+            .HasOne(f => f.Product)
+            .WithMany()
+            .HasForeignKey(f => f.ProductId)
+            .IsRequired(false);
+
+        b.Entity<Favorite>()
+            .HasOne(f => f.StoreListing)
+            .WithMany()
+            .HasForeignKey(f => f.StoreListingId)
+            .IsRequired(false);
+
+        b.Entity<PriceAlert>()
+            .HasOne(a => a.StoreListing)
+            .WithMany()
+            .HasForeignKey(a => a.StoreListingId)
+            .IsRequired(false);
         b.Entity<MatchGroupListing>().HasKey(m => new { m.MatchGroupId, m.StoreListingId });
         b.Entity<UserNotificationSettings>().HasKey(s => s.UserId);
 

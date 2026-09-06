@@ -88,7 +88,8 @@ public class DuplicatesController : ControllerBase
                     // Tick everything. Leaving the last one out came from the
                     // mock, but merging a single listing produces no comparison,
                     // so it just made the admin re-tick a box 194 times.
-                    PreSelected: true)).ToList());
+                    PreSelected: true,
+                    sl.ImageUrl)).ToList());
         }).ToList();
 
         return Ok(new DuplicatesResponse(
@@ -189,6 +190,54 @@ public class DuplicatesController : ControllerBase
             null,
             await _db.MatchGroups.CountAsync(g => g.Status == MatchStatus.NeedsReview, ct),
             await _db.MatchGroups.CountAsync(g => g.Status == MatchStatus.Matched, ct)));
+    }
+
+    /// <summary>
+    /// Every merged product with its store spread. Backs the "Products tracked"
+    /// tile on the dashboard, which was showing a real count above a hardcoded
+    /// list of eight fictional products.
+    /// </summary>
+    [HttpGet("products")]
+    public async Task<ActionResult<AdminProductsResponse>> Products(
+        [FromQuery] string? q,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken ct = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 200);
+
+        // A product with no listings is not a product — it is a leftover from a
+        // split, or seed data. Twenty-two of them once padded this list out to
+        // 24 while only two had anything behind them.
+        var query = _db.Products.Where(p => p.Listings.Any());
+        if (!string.IsNullOrWhiteSpace(q))
+            query = query.Where(p => EF.Functions.ILike(p.Name, $"%{q.Trim()}%"));
+
+        var total = await query.CountAsync(ct);
+
+        var items = await query
+            .OrderBy(p => p.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(p => new AdminProductDto(
+                p.Id,
+                p.Name,
+                p.Category != null ? p.Category.Name : null,
+                p.Listings.Count,
+                p.Listings.Select(l => l.StoreId).Distinct().Count(),
+                p.Listings.Any() ? p.Listings.Min(l => l.Price) : (decimal?)null,
+                p.Listings.Any() ? p.Listings.Max(l => l.Price) : (decimal?)null,
+                // products.image_url is set on only 2 of 24 rows, while every
+                // listing has one, so fall back to the listings.
+                p.ImageUrl ?? p.Listings
+                    .Where(l => l.ImageUrl != null)
+                    .Select(l => l.ImageUrl)
+                    .FirstOrDefault()))
+            .ToListAsync(ct);
+
+        return Ok(new AdminProductsResponse(
+            items, total, page, (int)Math.Ceiling(total / (double)pageSize)));
     }
 
     /// <summary>

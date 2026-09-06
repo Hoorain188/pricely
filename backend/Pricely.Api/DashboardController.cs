@@ -24,8 +24,12 @@ public class DashboardController : ControllerBase
 
         var totalUsers      = await _db.Users.CountAsync(u => u.Role == UserRole.User, ct);
         var usersWeekAgo    = await _db.Users.CountAsync(u => u.Role == UserRole.User && u.CreatedAt < weekAgo, ct);
-        var products        = await _db.Products.CountAsync(ct);
-        var productsWeekAgo = await _db.Products.CountAsync(p => p.CreatedAt < weekAgo, ct);
+        // Only products that actually carry listings. Twenty-two empty rows —
+        // seed data and leftovers from splits — once made this read 24 when two
+        // had anything behind them.
+        var products        = await _db.Products.CountAsync(p => p.Listings.Any(), ct);
+        var productsWeekAgo = await _db.Products.CountAsync(
+            p => p.CreatedAt < weekAgo && p.Listings.Any(), ct);
         var activeAlerts    = await _db.PriceAlerts.CountAsync(a => !a.IsTriggered, ct);
         var alertsWeekAgo   = await _db.PriceAlerts.CountAsync(a => !a.IsTriggered && a.CreatedAt < weekAgo, ct);
 
@@ -57,7 +61,10 @@ public class DashboardController : ControllerBase
             {
                 var run = latestRuns.FirstOrDefault(r => r.StoreId == s.Id);
                 var status = run is null            ? "fail"
-                           : run.FinishedAt is null ? "running"
+                           // A run left open for hours is not running, it died.
+                           // Without this the Re-run button stays disabled forever.
+                           : run.FinishedAt is null
+                               ? (run.StartedAt > DateTimeOffset.UtcNow.AddMinutes(-20) ? "running" : "fail")
                            : run.Status == ScraperRunStatus.Ok ? "ok" : "fail";
 
                 var liveItemCount = listingCounts.FirstOrDefault(l => l.StoreId == s.Id)?.Count ?? 0;
@@ -71,7 +78,10 @@ public class DashboardController : ControllerBase
             .ToList();
 
         var recentErrors = recentRuns
-            .Where(r => r.Status == ScraperRunStatus.Fail && r.ErrorMessage != null)
+            // Three-week-old failures were still top of the list. If it has not
+            // recurred in a week it is history, not a problem.
+            .Where(r => r.Status == ScraperRunStatus.Fail && r.ErrorMessage != null
+                     && r.StartedAt >= weekAgo)
             .Take(5)
             .Select(r => new ScraperErrorDto(
                 allStores.FirstOrDefault(s => s.Id == r.StoreId)?.Name ?? "Unknown",
@@ -89,22 +99,27 @@ public class DashboardController : ControllerBase
 
         var topSearches = searchRows.Select(x => new RankedItem(x.Label, x.Count)).ToList();
 
+        // Alerts hang off listings, not products — almost nothing is merged, so
+        // grouping by ProductId put every alert under a null key and the name
+        // lookup came back empty, printing "Unknown".
         var trackedRows = await _db.PriceAlerts
-            .GroupBy(a => a.ProductId)
-            .Select(g => new { ProductId = g.Key, Count = g.Count() })
+            .Where(a => a.StoreListingId != null)
+            .GroupBy(a => a.StoreListingId!.Value)
+            .Select(g => new { StoreListingId = g.Key, Count = g.Count() })
             .OrderByDescending(x => x.Count)
             .Take(3)
             .ToListAsync(ct);
 
-        var trackedIds = trackedRows.Select(x => x.ProductId).ToList();
-        var trackedNames = await _db.Products
-            .Where(p => trackedIds.Contains(p.Id))
-            .Select(p => new { p.Id, p.Name })
+        var trackedIds = trackedRows.Select(x => x.StoreListingId).ToList();
+
+        var trackedNames = await _db.StoreListings
+            .Where(l => trackedIds.Contains(l.Id))
+            .Select(l => new { l.Id, Name = l.RawTitle })
             .ToListAsync(ct);
 
         var mostTracked = trackedRows
             .Select(x => new RankedItem(
-                trackedNames.FirstOrDefault(n => n.Id == x.ProductId)?.Name ?? "Unknown",
+                trackedNames.FirstOrDefault(n => n.Id == x.StoreListingId)?.Name ?? "Unknown",
                 x.Count))
             .ToList();
 

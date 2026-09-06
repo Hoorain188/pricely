@@ -1,33 +1,59 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, TextInput, Image, BackHandler } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+  BackHandler,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
-import { Smartphone, Headphones, HardDrive, Bell } from 'lucide-react-native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { Bell, Trash2 } from 'lucide-react-native';
 import { colors, fonts, radii, shadows, gradients } from '../theme/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import Sidebar from '../components/Sidebar';
 import LottieHamburger from '../components/LottieHamburger';
 import LottieBackButton from '../components/Lottiebackbutton';
-import { useUserStore } from '../context/UserStore';
 import CustomAlertDialog from '../components/CustomAlertDialog';
-
-const getIcon = (name: string) => {
-  const lower = name.toLowerCase();
-  if (lower.includes('phone') || lower.includes('redmi') || lower.includes('galaxy') || lower.includes('iphone')) {
-    return Smartphone;
-  }
-  if (lower.includes('headphones') || lower.includes('audio') || lower.includes('sony') || lower.includes('jbl')) {
-    return Headphones;
-  }
-  return HardDrive;
-};
+import { api, ApiError, formatPrice, type ShopperAlert } from './api/client';
 
 export default function AlertsScreen() {
   const navigation = useNavigation<any>();
-  const { alerts, toggleAlertActive, addAlert } = useUserStore();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
+
+  const [alerts, setAlerts] = useState<ShopperAlert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<number | null>(null);
+
+  const [errorVisible, setErrorVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      setError(null);
+      const res = await api.alerts();
+      setAlerts(res.items);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load your alerts.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  // Reload on focus: an alert set from a product page should be here by the
+  // time the shopper comes back to look for it.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const handleBack = () => {
     if (navigation.canGoBack()) {
@@ -43,63 +69,180 @@ export default function AlertsScreen() {
         setMenuOpen(false);
         return true;
       }
-      if (modalVisible) {
-        setModalVisible(false);
-        return true;
-      }
       handleBack();
       return true;
     };
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [navigation, menuOpen, modalVisible]);
+  }, [navigation, menuOpen]);
 
-  // Custom alert dialog states
-  const [saveSuccessVisible, setSaveSuccessVisible] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-  const [errorVisible, setErrorVisible] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  // Form states
-  const [newProductName, setNewProductName] = useState('');
-  const [newCurrentPrice, setNewCurrentPrice] = useState('');
-  const [newTargetPrice, setNewTargetPrice] = useState('');
-
-  const handleCreateAlert = () => {
-    if (!newProductName.trim()) {
-      setErrorMessage('Product name is required');
+  const handleRemove = async (alert: ShopperAlert) => {
+    setRemovingId(alert.id);
+    try {
+      await api.removeAlert(alert.id);
+      setAlerts((prev) => prev.filter((a) => a.id !== alert.id));
+    } catch (err) {
+      setErrorMessage(
+        err instanceof ApiError ? err.message : 'Could not remove that alert.',
+      );
       setErrorVisible(true);
-      return;
+    } finally {
+      setRemovingId(null);
     }
-    if (!newCurrentPrice.trim()) {
-      setErrorMessage('Current price is required');
-      setErrorVisible(true);
-      return;
-    }
-    if (!newTargetPrice.trim()) {
-      setErrorMessage('Target price is required');
-      setErrorVisible(true);
-      return;
+  };
+
+  const renderBody = () => {
+    if (loading) {
+      return (
+        <View style={styles.stateBox}>
+          <ActivityIndicator color={colors.accentSolid} />
+        </View>
+      );
     }
 
-    addAlert({
-      name: newProductName,
-      currentPrice: newCurrentPrice.startsWith('Rs') ? newCurrentPrice : `Rs ${newCurrentPrice}`,
-      targetPrice: newTargetPrice.startsWith('Rs') ? newTargetPrice : `Rs ${newTargetPrice}`,
-    });
+    if (error) {
+      return (
+        <View style={styles.stateBox}>
+          <Text style={styles.emptyTitle}>Couldn't load your alerts</Text>
+          <Text style={styles.emptySubtitle}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => {
+              setLoading(true);
+              load();
+            }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.retryText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
 
-    setModalVisible(false);
-    setNewProductName('');
-    setNewCurrentPrice('');
-    setNewTargetPrice('');
-    setSuccessMessage(`You will be notified for price drops on ${newProductName}!`);
-    setSaveSuccessVisible(true);
+    if (alerts.length === 0) {
+      return (
+        <View style={styles.stateBox}>
+          <Bell size={48} color={colors.textTertiary} style={{ marginBottom: 12 }} />
+          <Text style={styles.emptyTitle}>No price alerts yet</Text>
+          {/* The old version had an "add alert" form here that took a typed
+              product name. Nothing on the server could ever match that to a
+              real listing, so the alert could never fire. Alerts are set from
+              a product, where the listing is known. */}
+          <Text style={styles.emptySubtitle}>
+            Open a product and set a target price. We'll watch it for you.
+          </Text>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => navigation.navigate('Search')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.retryText}>Find a product</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <>
+        {alerts.map((item) => {
+          const busy = removingId === item.id;
+          const gap =
+            item.currentPrice !== null ? item.currentPrice - item.targetPrice : null;
+
+          return (
+            <TouchableOpacity
+              key={item.id}
+              style={[styles.card, item.isTriggered && styles.cardHighlighted]}
+              activeOpacity={0.9}
+              onPress={() =>
+                navigation.navigate('ProductDetail', {
+                  id: item.storeListingId,
+                  productName: item.title,
+                  currentPrice:
+                    item.currentPrice !== null ? formatPrice(item.currentPrice) : '',
+                  imageUrl: item.imageUrl,
+                })
+              }
+            >
+              <View style={styles.mainInfo}>
+                {item.imageUrl ? (
+                  <Image
+                    source={{ uri: item.imageUrl }}
+                    style={styles.dealImage}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={[styles.dealImage, styles.dealImageEmpty]} />
+                )}
+
+                <View style={styles.details}>
+                  <Text style={styles.productName} numberOfLines={2}>
+                    {item.title ?? 'Product no longer listed'}
+                  </Text>
+                  <Text style={styles.targetText}>
+                    Notify below {formatPrice(item.targetPrice)}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  onPress={() => handleRemove(item)}
+                  disabled={busy}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  {busy ? (
+                    <ActivityIndicator size="small" color={colors.danger} />
+                  ) : (
+                    <Trash2 size={18} color={colors.danger} />
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.bottomInfo}>
+                <Text style={styles.currentPriceText}>
+                  Current:{' '}
+                  <Text style={styles.priceHighlight}>
+                    {item.currentPrice !== null ? formatPrice(item.currentPrice) : '—'}
+                  </Text>
+                </Text>
+                <Text
+                  style={[styles.remainingText, item.isTriggered && styles.remainingTextReached]}
+                >
+                  {item.isTriggered
+                    ? 'Target reached!'
+                    : gap !== null && gap > 0
+                      ? `${formatPrice(gap)} to go`
+                      : ''}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+
+        {alerts
+          .filter((a) => a.isTriggered)
+          .map((alert) => (
+            <View key={`reached-${alert.id}`} style={styles.targetReachedCard}>
+              <View style={styles.targetIconContainer}>
+                <Bell size={22} color="#0E6B4F" />
+              </View>
+              <View style={styles.targetTextDetails}>
+                <Text style={styles.targetReachedTitle}>Target reached! 📣</Text>
+                <Text style={styles.targetReachedSubtitle}>
+                  {alert.title} hit{' '}
+                  {alert.currentPrice !== null ? formatPrice(alert.currentPrice) : ''}
+                </Text>
+              </View>
+            </View>
+          ))}
+      </>
+    );
   };
 
   return (
     <>
       <SafeAreaView style={styles.root} edges={['top']}>
-        {/* Header */}
         <LinearGradient
           colors={gradients.primary}
           locations={gradients.primaryLocations}
@@ -118,146 +261,23 @@ export default function AlertsScreen() {
           </TouchableOpacity>
         </LinearGradient>
 
-        <ScrollView contentContainerStyle={styles.scrollList} showsVerticalScrollIndicator={false}>
-          {/* Add Price Alert Button below header */}
-          <TouchableOpacity
-            style={styles.contentAddButton}
-            activeOpacity={0.85}
-            onPress={() => setModalVisible(true)}
-          >
-            <Ionicons name="add" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.contentAddButtonText}>Add New Price Alert</Text>
-          </TouchableOpacity>
-
-          {alerts.map((item) => {
-            const isMet = item.remainingPrice.toLowerCase().includes('target') || item.remainingPrice.toLowerCase().includes('reached');
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={[
-                  styles.card, 
-                  isMet && styles.cardHighlighted, 
-                  !item.active && styles.cardInactive
-                ]}
-                activeOpacity={0.9}
-                onPress={() => navigation.navigate('ProductDetail', { productName: item.name, currentPrice: item.currentPrice })}
-              >
-                <View style={styles.mainInfo}>
-                  <Image
-                    source={{ uri: `https://picsum.photos/seed/${item.name.replace(/\s/g, '')}/300/300` }}
-                    style={styles.dealImage}
-                    resizeMode="cover"
-                  />
-
-                  <View style={styles.details}>
-                    <Text style={styles.productName} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    <Text style={styles.targetText}>Notify below {item.targetPrice}</Text>
-                  </View>
-
-                  <Switch
-                    value={item.active}
-                    onValueChange={() => toggleAlertActive(item.id)}
-                    trackColor={{ false: '#767577', true: '#0E6B4F' }}
-                    thumbColor={item.active ? '#FFFFFF' : '#f4f3f4'}
-                  />
-                </View>
-
-                <View style={styles.divider} />
-
-                <View style={styles.bottomInfo}>
-                  <Text style={styles.currentPriceText}>
-                    Current: <Text style={styles.priceHighlight}>{item.currentPrice}</Text>
-                  </Text>
-                  <Text style={[
-                    styles.remainingText,
-                    isMet && styles.remainingTextReached
-                  ]}>
-                    {item.remainingPrice}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-
-          {alerts.length === 0 && (
-            <View style={styles.emptyContainer}>
-              <Bell size={48} color={colors.textTertiary} style={{ marginBottom: 12 }} />
-              <Text style={styles.emptyTitle}>No Active Alerts</Text>
-              <Text style={styles.emptySubtitle}>Click "+" to set a new price alert</Text>
-            </View>
-          )}
-
-          {/* Dynamic Target reached banners */}
-          {alerts.filter(a => a.remainingPrice.includes('Target') && a.active).map(alert => (
-            <View key={`reached-${alert.id}`} style={styles.targetReachedCard}>
-              <View style={styles.targetIconContainer}>
-                <Bell size={22} color="#0E6B4F" />
-              </View>
-              <View style={styles.targetTextDetails}>
-                <Text style={styles.targetReachedTitle}>Target reached! 📣</Text>
-                <Text style={styles.targetReachedSubtitle}>{alert.name} hit {alert.currentPrice}</Text>
-              </View>
-            </View>
-          ))}
+        <ScrollView
+          contentContainerStyle={styles.scrollList}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                load();
+              }}
+              tintColor={colors.accentSolid}
+            />
+          }
+        >
+          {renderBody()}
         </ScrollView>
       </SafeAreaView>
-
-      {/* Add Alert Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Set Price Alert</Text>
-
-            <Text style={styles.inputLabel}>Product Name</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="e.g. Redmi Note 13"
-              value={newProductName}
-              onChangeText={setNewProductName}
-            />
-
-            <Text style={styles.inputLabel}>Current Price (Rs)</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="e.g. 54,999"
-              keyboardType="numeric"
-              value={newCurrentPrice}
-              onChangeText={setNewCurrentPrice}
-            />
-
-            <Text style={styles.inputLabel}>Target Price (Rs)</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="e.g. 52,000"
-              keyboardType="numeric"
-              value={newTargetPrice}
-              onChangeText={setNewTargetPrice}
-            />
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={handleCreateAlert}
-              >
-                <Text style={styles.saveButtonText}>Save Alert</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       <Sidebar
         visible={menuOpen}
@@ -266,24 +286,20 @@ export default function AlertsScreen() {
           if (dest === 'Home') navigation.navigate('Home');
           else if (dest === 'Search') navigation.navigate('Search');
           else if (dest === 'Favorites') navigation.navigate('Favorites');
-          else if (dest === 'Price Alerts' || dest === 'Notifications' || dest === 'Alerts') navigation.navigate('Alerts');
+          else if (dest === 'Price Alerts' || dest === 'Notifications' || dest === 'Alerts')
+            navigation.navigate('Alerts');
           else if (dest === 'Profile' || dest === 'Account') navigation.navigate('Account');
           else if (dest === 'Settings') navigation.navigate('Settings');
-          else if (dest === 'Help & Support' || dest === 'HelpSupport' || dest === 'Help') navigation.navigate('HelpSupport');
-          else if (['Electronics', 'Fashion', 'Home & Living', 'Beauty', 'Appliances', 'Mobiles', 'Categories'].includes(dest)) {
+          else if (dest === 'Help & Support' || dest === 'HelpSupport' || dest === 'Help')
+            navigation.navigate('HelpSupport');
+          else if (
+            ['Electronics', 'Fashion', 'Home & Living', 'Beauty', 'Appliances', 'Mobiles', 'Categories'].includes(
+              dest,
+            )
+          ) {
             navigation.navigate('Category', { categoryKey: 'mobiles_tablets' });
           }
         }}
-      />
-
-      <CustomAlertDialog
-        visible={saveSuccessVisible}
-        title="Success"
-        message={successMessage}
-        confirmText="OK"
-        onConfirm={() => setSaveSuccessVisible(false)}
-        onCancel={() => setSaveSuccessVisible(false)}
-        type="success"
       />
 
       <CustomAlertDialog
@@ -300,10 +316,7 @@ export default function AlertsScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+  root: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -326,213 +339,101 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  contentAddButton: {
-    backgroundColor: '#0E6B4F',
+
+  scrollList: { padding: 16, paddingBottom: 40 },
+
+  stateBox: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 20 },
+  emptyTitle: {
+    fontSize: 17,
+    fontFamily: fonts.headlineBold,
+    color: colors.textPrimary,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 13.5,
+    fontFamily: fonts.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  retryBtn: {
+    backgroundColor: colors.accentSolid,
     borderRadius: radii.medium,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    marginVertical: 10,
-    ...shadows.button,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
   },
-  contentAddButtonText: {
-    color: '#FFFFFF',
-    fontFamily: fonts.button,
-    fontSize: 15,
-  },
-  scrollList: {
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-    gap: 16,
-  },
+  retryText: { color: '#FFFFFF', fontFamily: fonts.button, fontSize: 13.5 },
+
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: radii.medium + 4,
-    padding: 16,
+    backgroundColor: colors.surface,
+    borderRadius: radii.medium,
     borderWidth: 1,
     borderColor: colors.border,
+    padding: 14,
+    marginBottom: 12,
     ...shadows.card,
   },
-  cardHighlighted: {
-    borderColor: '#D97706',
-    borderWidth: 1.5,
-  },
-  cardInactive: {
-    opacity: 0.55,
-  },
-  mainInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  cardHighlighted: { borderColor: colors.accentSolid },
+  mainInfo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   dealImage: {
-    width: 60,
-    height: 60,
+    width: 52,
+    height: 52,
     borderRadius: radii.small,
-    marginRight: 14,
-    backgroundColor: colors.accentTint,
+    backgroundColor: colors.background,
   },
-  details: {
-    flex: 1,
-    marginRight: 10,
-  },
+  dealImageEmpty: { borderWidth: 1, borderColor: colors.border },
+  details: { flex: 1 },
   productName: {
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: fonts.label,
+    fontWeight: '700',
     color: colors.textPrimary,
+    lineHeight: 19,
   },
   targetText: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: fonts.body,
     color: colors.textSecondary,
-    marginTop: 4,
+    marginTop: 3,
   },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: 14,
-  },
-  bottomInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  currentPriceText: {
-    fontSize: 13,
-    fontFamily: fonts.body,
-    color: colors.textSecondary,
-  },
-  priceHighlight: {
-    fontFamily: fonts.monoEmphasis,
-    color: '#D97706',
-  },
-  remainingText: {
-    fontSize: 13,
-    fontFamily: fonts.body,
-    color: colors.textSecondary,
-  },
-  remainingTextReached: {
-    color: '#D97706',
-    fontFamily: fonts.headlineBold,
-  },
+  divider: { height: 1, backgroundColor: colors.border, marginVertical: 12 },
+  bottomInfo: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  currentPriceText: { fontSize: 12.5, fontFamily: fonts.body, color: colors.textSecondary },
+  priceHighlight: { fontFamily: fonts.mono, color: colors.textPrimary },
+  remainingText: { fontSize: 12, fontFamily: fonts.label, color: colors.textTertiary },
+  remainingTextReached: { color: colors.accentSolid },
+
   targetReachedCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    borderRadius: radii.medium + 4,
-    borderWidth: 1.5,
-    borderColor: '#F59E0B',
-    borderStyle: 'dashed',
-    padding: 16,
+    gap: 12,
+    backgroundColor: colors.accentTint,
+    borderRadius: radii.medium,
+    padding: 14,
+    marginTop: 4,
+    marginBottom: 12,
   },
   targetIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: radii.small,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 14,
   },
-  targetTextDetails: {
-    flex: 1,
-  },
+  targetTextDetails: { flex: 1 },
   targetReachedTitle: {
-    fontSize: 15,
-    fontFamily: fonts.button,
-    color: '#B45309',
+    fontSize: 14,
+    fontFamily: fonts.label,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
   targetReachedSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: fonts.body,
-    color: '#B45309',
+    color: colors.textSecondary,
     marginTop: 2,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontFamily: fonts.label,
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    fontFamily: fonts.body,
-    color: colors.textSecondary,
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    width: '100%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: radii.medium,
-    padding: 20,
-    ...shadows.card,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontFamily: fonts.headlineBold,
-    color: colors.textPrimary,
-    marginBottom: 18,
-    textAlign: 'center',
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontFamily: fonts.label,
-    color: colors.textSecondary,
-    marginBottom: 6,
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.small,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    fontFamily: fonts.body,
-    color: colors.textPrimary,
-    marginBottom: 16,
-    backgroundColor: colors.background,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-    marginTop: 8,
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: radii.small,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#F5F5F5',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  cancelButtonText: {
-    fontFamily: fonts.button,
-    color: colors.textSecondary,
-    fontSize: 14,
-  },
-  saveButton: {
-    backgroundColor: '#0E6B4F',
-  },
-  saveButtonText: {
-    fontFamily: fonts.button,
-    color: '#FFFFFF',
-    fontSize: 14,
   },
 });

@@ -163,7 +163,9 @@ export default function AdminSettingsScreen({ navigation }: AdminSettingsScreenP
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 40 },
+  // Titles sat under the status bar. Android reports no safe-area inset here,
+  // so the clearance is explicit rather than left to SafeAreaView.
+  content: { padding: 20, paddingTop: 52, paddingBottom: 40 },
   title: { fontSize: 24, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginBottom: 18 },
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 26 },
   avatar: {

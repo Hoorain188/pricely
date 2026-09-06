@@ -120,6 +120,7 @@ export interface ApiListing {
   price: number;
   currency: string;
   preSelected: boolean;
+  imageUrl: string | null;
 }
 
 export interface ApiDuplicateGroup {
@@ -196,6 +197,65 @@ export interface NotificationPrefs {
   weeklySummaryEmail: boolean;
 }
 
+export interface AdminProduct {
+  id: number;
+  name: string;
+  category: string | null;
+  listingCount: number;
+  storeCount: number;
+  lowestPrice: number | null;
+  highestPrice: number | null;
+  imageUrl: string | null;
+}
+
+export interface AdminProductsResponse {
+  items: AdminProduct[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+/** A shopper watching one listing. Alerts hang off listings, not products,
+ *  because almost nothing in the catalogue has been merged into a product. */
+/** A favourite hangs off a listing, like an alert — almost nothing has been
+ *  merged into a product, so a product id would rule most of the catalogue out. */
+export interface ShopperFavorite {
+  id: number;
+  storeListingId: number | null;
+  productId: number | null;
+  createdAt: string;
+  title: string | null;
+  price: number | null;
+  imageUrl: string | null;
+  storeName: string | null;
+  productUrl: string | null;
+}
+
+export interface ShopperAlert {
+  id: number;
+  storeListingId: number | null;
+  productId: number | null;
+  targetPrice: number;
+  isTriggered: boolean;
+  triggeredAt: string | null;
+  createdAt: string;
+  title: string | null;
+  currentPrice: number | null;
+  imageUrl: string | null;
+  productUrl: string | null;
+}
+
+export interface AdminAlert {
+  id: number;
+  title: string;
+  storeName: string | null;
+  imageUrl: string | null;
+  currentPrice: number | null;
+  targetPrice: number;
+  isTriggered: boolean;
+  createdAt: string;
+}
+
 export interface ApiActivityEntry {
   id: number;
   /** Already rendered as a sentence by the server. */
@@ -237,6 +297,33 @@ export interface ReportsResponse {
 // -------------------------------------------------------------- calls
 
 export const api = {
+  favorites: () => request<{ items: ShopperFavorite[] }>('/favorites'),
+
+  addFavorite: (storeListingId: number) =>
+    request<{ favorited: boolean; storeListingId: number }>('/favorites', {
+      method: 'POST',
+      body: JSON.stringify({ storeListingId }),
+    }),
+
+  removeFavorite: (storeListingId: number) =>
+    request<{ favorited: boolean; storeListingId: number }>(
+      `/favorites/${storeListingId}`,
+      { method: 'DELETE' },
+    ),
+
+  alerts: () => request<{ items: ShopperAlert[] }>('/alerts'),
+
+  setAlert: (storeListingId: number, targetPrice: number) =>
+    request<{ watching: boolean; storeListingId: number; currentPrice: number }>('/alerts', {
+      method: 'POST',
+      body: JSON.stringify({ storeListingId, targetPrice }),
+    }),
+
+  removeAlert: (id: number) =>
+    request<{ watching: boolean; id: number }>(`/alerts/${id}`, { method: 'DELETE' }),
+
+  adminAlerts: () => request<{ items: AdminAlert[] }>('/admin/alerts'),
+
   logSearch: (queryText: string) =>
     request<void>('/searches', { method: 'POST', body: JSON.stringify({ queryText }) }),
   logStoreClick: (url: string) =>
@@ -245,6 +332,12 @@ export const api = {
 
   rerunScraper: (storeId: number) =>
     request<{ store: string }>(`/admin/scrapers/${storeId}/run`, { method: 'POST' }),
+
+  products: (search?: string, page = 1, pageSize = 50) =>
+    request<AdminProductsResponse>(
+      `/admin/products?page=${page}&pageSize=${pageSize}` +
+        (search ? `&q=${encodeURIComponent(search)}` : ''),
+    ),
 
   duplicates: (status: 'pending' | 'merged', search?: string) =>
     request<DuplicatesResponse>(

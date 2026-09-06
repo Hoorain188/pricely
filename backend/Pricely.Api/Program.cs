@@ -424,6 +424,29 @@ catch (Exception ex)
 }
 
 // ── Hangfire dashboard (secured with Basic Auth) ──────────────────────────
+// A sync writes its scraper_runs row when it starts and closes it when it
+// finishes. Stopping the API in between leaves the row open forever: the
+// dashboard reads it as "still running" and the Re-run button stays disabled.
+// Anything still open at startup cannot be running, because nothing was.
+try
+{
+    using var startupScope = app.Services.CreateScope();
+    var startupDb = startupScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var closed = await startupDb.Database.ExecuteSqlRawAsync(@"
+        UPDATE scraper_runs
+        SET status = 'fail'::scraper_run_status,
+            error_message = COALESCE(error_message, 'Interrupted — the API restarted mid-run'),
+            finished_at = NOW()
+        WHERE finished_at IS NULL;");
+
+    if (closed > 0)
+        app.Logger.LogInformation("Closing stale scraper runs: {Count} left open by a previous shutdown.", closed);
+}
+catch (Exception ex)
+{
+    app.Logger.LogWarning("Could not close stale scraper runs: {Msg}", ex.Message);
+}
+
 app.UseHangfireDashboard("/hangfire", new DashboardOptions
 {
     Authorization = new[] { new HangfireAuthFilter() }

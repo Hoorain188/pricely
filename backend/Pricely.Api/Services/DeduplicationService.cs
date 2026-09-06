@@ -221,6 +221,10 @@ public class DeduplicationService
             }
 
             var listings = await db.StoreListings
+                // A listing already merged into a product has been decided on.
+                // Feeding it back in rebuilds the group without the product behind
+                // it, and Split then has nothing to split.
+                .Where(l => l.ProductId == null)
                 .Select(l => new { l.Id, l.StoreId, l.RawTitle, l.Price })
                 .ToListAsync();
 
@@ -267,7 +271,11 @@ public class DeduplicationService
                     if (ids.Count < 2) continue;
                     var storeCount = g.Where(x => ids.Contains(x.Id)).Select(x => x.StoreId).Distinct().Count();
                     if (storeCount < 2) continue;
-                    results.Add((ids, 100m, "matched"));
+                    // "matched" on a match_group means an admin merged it, and the
+                    // Merged tab and Split button both rely on that. An exact key
+                    // match is high confidence, not a decision — it still needs
+                    // review, so it goes in the queue at 100 rather than 70.
+                    results.Add((ids, 100m, "needs_review"));
                     foreach (var id in ids) usedIds.Add(id);
                 }
             }
@@ -338,9 +346,9 @@ public class DeduplicationService
             // SAVE
             await db.Database.ExecuteSqlRawAsync(
                 @"DELETE FROM match_group_listings WHERE match_group_id IN (
-                      SELECT id FROM match_groups WHERE status::text <> 'rejected');");
+                      SELECT id FROM match_groups WHERE status::text NOT IN ('rejected', 'matched'));");
             await db.Database.ExecuteSqlRawAsync(
-                "DELETE FROM match_groups WHERE status::text <> 'rejected';");
+                "DELETE FROM match_groups WHERE status::text NOT IN ('rejected', 'matched');");
 
             // An admin rejecting a group means "these are not the same thing".
             // Rebuilding it would put the same wrong pairing back in the queue.

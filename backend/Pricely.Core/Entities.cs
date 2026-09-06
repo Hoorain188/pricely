@@ -166,18 +166,39 @@ public class StoreClick
 
 public class Favorite
 {
+    public long Id { get; set; }
     public long UserId { get; set; }
-    public long ProductId { get; set; }
-    public DateTimeOffset CreatedAt { get; set; }
 
-    public Product Product { get; set; } = null!;
+    /// <summary>
+    /// Set only when the listing has been merged into a product. Favouriting
+    /// hangs off the listing for the same reason alerts do: two products exist
+    /// against fifteen thousand listings.
+    /// </summary>
+    public long? ProductId { get; set; }
+    public Product? Product { get; set; }
+
+    public long? StoreListingId { get; set; }
+    public StoreListing? StoreListing { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 public class PriceAlert
 {
     public long Id { get; set; }
     public long UserId { get; set; }
-    public long ProductId { get; set; }
+    /// <summary>
+    /// Set only once the listing has been merged into a product. Most listings
+    /// never are, so an alert hangs off the listing instead — a shopper should
+    /// not need the catalogue tidied before they can watch a price.
+    /// </summary>
+    public long? ProductId { get; set; }
+
+    public long? StoreListingId { get; set; }
+    public StoreListing? StoreListing { get; set; }
+
+    /// <summary>Price when the alert was last checked, for detecting a drop.</summary>
+    public decimal? LastSeenPrice { get; set; }
     public decimal TargetPrice { get; set; }
     public bool IsTriggered { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

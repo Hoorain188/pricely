@@ -41,6 +41,7 @@ export default function ProductDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { toggleFavorite, isFavorited, addAlert, alerts } = useUserStore();
+  const scrollViewRef = React.useRef<ScrollView>(null);
 
   const handle = route.params?.handle || '';
   const productUrl = route.params?.url || '';
@@ -317,12 +318,13 @@ export default function ProductDetailScreen() {
         </View>
       ) : (
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={{ flex: 1 }}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 20}
         >
           <ScrollView
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: 160 }]}
+            ref={scrollViewRef}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: 240 }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -536,6 +538,11 @@ export default function ProductDetailScreen() {
               <TextInput
                 value={alertPrice}
                 onChangeText={setAlertPrice}
+                onFocus={() => {
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                  }, 150);
+                }}
                 style={styles.alertInput}
                 keyboardType="number-pad"
                 placeholder="e.g. 50000"

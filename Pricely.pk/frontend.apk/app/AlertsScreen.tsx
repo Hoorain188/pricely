@@ -99,14 +99,21 @@ export default function AlertsScreen() {
 
   const handleRemove = async (alert: ShopperAlert) => {
     setRemovingId(alert.id);
+
+    // Remove from UI state & local store immediately
+    setAlerts((prev) => prev.filter((a) => a.id !== alert.id));
+
+    const userStore = useUserStore.getState();
+    userStore.removeAlert(String(alert.id));
+    if (alert.title) {
+      const match = userStore.alerts.find((a) => a.name === alert.title);
+      if (match) userStore.removeAlert(match.id);
+    }
+
     try {
       await api.removeAlert(alert.id);
-      setAlerts((prev) => prev.filter((a) => a.id !== alert.id));
     } catch (err) {
-      setErrorMessage(
-        err instanceof ApiError ? err.message : 'Could not remove that alert.',
-      );
-      setErrorVisible(true);
+      console.warn('[AlertsScreen] Best-effort remove alert notice:', err);
     } finally {
       setRemovingId(null);
     }

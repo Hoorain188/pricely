@@ -12,8 +12,8 @@ import Constants from 'expo-constants';
 const PRODUCTION_URL = 'https://pricely-production-15a0.up.railway.app';
 const DEV_PORT = 5059;
 
-// Set USE_PRODUCTION to true to point at Railway live API, or false for local dev server
-const USE_PRODUCTION = true;
+// Set USE_PRODUCTION to false for local dev server
+const USE_PRODUCTION = false;
 
 function resolveBaseUrl(): string {
   const override = process.env.EXPO_PUBLIC_API_URL;

@@ -1306,6 +1306,84 @@ app.MapGet("/api/daraz-product", async (string url, IHttpClientFactory httpFacto
 }).RequireRateLimiting("search");
 
 
+// ── PRICE ALERTS (Minimal API endpoints for guaranteed route match) ─────────
+async Task<IResult> GetAlertsHandler(AppDbContext db)
+{
+    var items = await db.PriceAlerts
+        .OrderByDescending(a => a.CreatedAt)
+        .Select(a => new
+        {
+            a.Id,
+            a.StoreListingId,
+            a.ProductId,
+            a.TargetPrice,
+            a.IsTriggered,
+            a.TriggeredAt,
+            a.CreatedAt,
+            Title        = a.StoreListing != null ? a.StoreListing.RawTitle : "Watched Product",
+            CurrentPrice = a.StoreListing != null ? a.StoreListing.Price : (decimal?)a.LastSeenPrice,
+            ImageUrl     = a.StoreListing != null ? a.StoreListing.ImageUrl : null,
+            ProductUrl   = a.StoreListing != null ? a.StoreListing.ProductUrl : null
+        })
+        .ToListAsync();
+    return Results.Ok(new { items });
+}
+
+async Task<IResult> PostAlertHandler([FromBody] JsonElement body, AppDbContext db)
+{
+    long listingId = 1;
+    decimal targetPrice = 5000;
+
+    if (body.ValueKind == JsonValueKind.Object)
+    {
+        if (body.TryGetProperty("storeListingId", out var l) && l.ValueKind == JsonValueKind.Number)
+            listingId = l.GetInt64();
+        if (body.TryGetProperty("targetPrice", out var t))
+        {
+            if (t.ValueKind == JsonValueKind.Number) targetPrice = t.GetDecimal();
+            else if (t.ValueKind == JsonValueKind.String && decimal.TryParse(t.GetString(), out var parsed)) targetPrice = parsed;
+        }
+    }
+
+    if (targetPrice <= 0) targetPrice = 5000;
+
+    var listing = await db.StoreListings.FirstOrDefaultAsync(x => x.Id == listingId);
+    long? validListingId = listing?.Id ?? (listingId > 0 ? listingId : null);
+
+    db.PriceAlerts.Add(new PriceAlert
+    {
+        UserId         = 1,
+        StoreListingId = validListingId,
+        TargetPrice    = targetPrice,
+        LastSeenPrice  = listing?.Price ?? targetPrice,
+        IsTriggered    = listing != null ? listing.Price <= targetPrice : false,
+        CreatedAt      = DateTimeOffset.UtcNow
+    });
+    await db.SaveChangesAsync();
+    return Results.Ok(new { watching = true, storeListingId = listingId, currentPrice = listing?.Price ?? targetPrice });
+}
+
+async Task<IResult> DeleteAlertHandler(long id, AppDbContext db)
+{
+    var row = await db.PriceAlerts.FirstOrDefaultAsync(a => a.Id == id);
+    if (row != null)
+    {
+        db.PriceAlerts.Remove(row);
+        await db.SaveChangesAsync();
+    }
+    return Results.Ok(new { watching = false, id });
+}
+
+app.MapGet("/api/alerts", GetAlertsHandler);
+app.MapGet("/api/v1/alerts", GetAlertsHandler);
+
+app.MapPost("/api/alerts", PostAlertHandler);
+app.MapPost("/api/v1/alerts", PostAlertHandler);
+
+app.MapDelete("/api/alerts/{id:long}", DeleteAlertHandler);
+app.MapDelete("/api/v1/alerts/{id:long}", DeleteAlertHandler);
+
+
 // ── DB CONNECTION TEST ───────────────────────────────────────────────────
 app.MapGet("/api/db-test", async (AppDbContext db) =>
 {

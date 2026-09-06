@@ -1236,16 +1236,67 @@ app.MapGet("/api/daraz-product", async (string url, IHttpClientFactory httpFacto
             if (t.Success) title = t.Groups[1].Value;
         }
 
+        // --- Description / Highlights extraction ---
+        string description = "";
+
+        // 1) Highlights div / list in Daraz HTML
+        var hlMatch = Regex.Match(html, @"<div[^>]*class=""[^""]*pdp-product-highlights[^""]*""[^>]*>(.*?)</div>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        if (!hlMatch.Success)
+        {
+            hlMatch = Regex.Match(html, @"<ul[^>]*class=""[^""]*pdp-mod-specification[^""]*""[^>]*>(.*?)</ul>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        }
+
+        if (hlMatch.Success)
+        {
+            var rawHl = hlMatch.Groups[1].Value;
+            var liMatches = Regex.Matches(rawHl, @"<li[^>]*>(.*?)</li>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            if (liMatches.Count > 0)
+            {
+                var items = liMatches.Select(m => "• " + CleanText(m.Groups[1].Value)).Where(s => s.Length > 3);
+                description = string.Join("\n", items);
+            }
+            else
+            {
+                description = CleanText(rawHl);
+            }
+        }
+
+        // 2) JSON "highlights" array if HTML block not matched
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            var jsonHlMatch = Regex.Match(html, @"""highlights""\s*:\s*\[(.*?)\]", RegexOptions.Singleline);
+            if (jsonHlMatch.Success)
+            {
+                var itemsMatch = Regex.Matches(jsonHlMatch.Groups[1].Value, @"""([^""]+)""");
+                if (itemsMatch.Count > 0)
+                {
+                    var items = itemsMatch.Select(m => "• " + CleanText(m.Groups[1].Value)).Where(s => s.Length > 3);
+                    description = string.Join("\n", items);
+                }
+            }
+        }
+
+        // 3) Meta description fallback
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            var metaDesc = Regex.Match(html, @"<meta\s+(?:name|property)=[""'](?:og:)?description[""']\s+content=[""']([^""']+)[""']", RegexOptions.IgnoreCase);
+            if (metaDesc.Success)
+            {
+                description = CleanText(metaDesc.Groups[1].Value);
+            }
+        }
+
         return Results.Ok(new
         {
-            Title    = title,
-            Store    = "Daraz",
-            Price    = price,
-            Brand    = brand,
-            Category = category,
-            Images   = images,
+            Title       = title,
+            Store       = "Daraz",
+            Price       = price,
+            Brand       = brand,
+            Category    = category,
+            Description = description,
+            Images      = images,
             ViewOnStoreUrl = url,
-            Note = "Poori tafseel aur reviews Daraz par dekhein"
+            Note = "View full product details & customer reviews on Daraz.pk"
         });
     }
     catch (Exception ex)

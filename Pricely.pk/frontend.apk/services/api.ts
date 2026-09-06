@@ -283,7 +283,7 @@ export async function fetchDarazProductDetail(productUrl: string): Promise<Produ
     return {
       title: data.title || '',
       store: 'Daraz',
-      description: data.note || 'View full details and customer reviews on Daraz.pk',
+      description: data.description || data.note || 'View full product specifications, details, and customer reviews on Daraz.pk',
       brand: data.brand || '',
       images: Array.isArray(data.images) ? data.images.filter(Boolean) : [],
       variants: [{ title: 'Standard', price: data.price || '0', available: true }],
@@ -293,7 +293,7 @@ export async function fetchDarazProductDetail(productUrl: string): Promise<Produ
     return {
       title: 'Daraz Product',
       store: 'Daraz',
-      description: 'View full details and customer reviews on Daraz.pk',
+      description: 'View full product specifications, details, and customer reviews on Daraz.pk',
       brand: 'Daraz',
       images: [],
       variants: [{ title: 'Standard', price: '0', available: true }],

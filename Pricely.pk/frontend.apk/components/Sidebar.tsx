@@ -16,6 +16,7 @@ import {
     X,
 } from 'lucide-react-native';
 import BrandMark from './BrandMark';
+import CustomAlertDialog from './CustomAlertDialog';
 import { colors, fonts, radii } from '../theme/colors';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -34,21 +35,21 @@ const MENU: {
             key: 'categories',
             label: 'Categories',
             Icon: Tag,
-            children: ['Mobiles', 'Electronics', 'Fashion', 'Home & Living', 'Beauty', 'Appliances'],
-        },
-        {
-            key: 'deals',
-            label: 'Deals',
-            Icon: Percent,
-            children: ['Best Drops', 'Trending', 'Price Alerts'],
+            children: [
+                'Mobiles & Tablets',
+                'Laptops & Computers',
+                'TVs & Entertainment',
+                'Home Appliances',
+                'Kitchen Appliances',
+                'Cameras',
+                'Audio',
+                'Wearables',
+                'Gaming',
+                'Accessories',
+            ],
         },
         { key: 'favorites', label: 'Favorites', Icon: Heart },
-        {
-            key: 'account',
-            label: 'Account',
-            Icon: User,
-            children: ['Profile', 'Order History', 'Settings'],
-        },
+        { key: 'account', label: 'Account', Icon: User },
         { key: 'notifications', label: 'Notifications', Icon: Bell },
         { key: 'settings', label: 'Settings', Icon: Settings },
         { key: 'help', label: 'Help & Support', Icon: HelpCircle },
@@ -64,26 +65,24 @@ interface AccordionRowProps {
     onLayoutRow: (y: number) => void;
 }
 
-// Controlled by the parent now (isExpanded/onToggle come from Sidebar's
-// single `expandedKey` state) instead of managing its own boolean — that's
-// what makes "only one section open at a time" possible.
 function AccordionRow({ Icon, label, children, isExpanded, onToggle, onNavigate, onLayoutRow }: AccordionRowProps) {
     const heightAnim = useRef(new Animated.Value(0)).current;
     const rotateAnim = useRef(new Animated.Value(0)).current;
     const hasChildren = !!children?.length;
-    const contentHeight = (children?.length || 0) * ROW_HEIGHT;
+    const VISIBLE_ITEMS = 5;
+    const targetHeight = Math.min(children?.length || 0, VISIBLE_ITEMS) * ROW_HEIGHT;
 
     useEffect(() => {
         Animated.parallel([
             Animated.timing(heightAnim, {
-                toValue: isExpanded ? contentHeight : 0,
+                toValue: isExpanded ? targetHeight : 0,
                 duration: 300,
                 easing: Easing.out(Easing.cubic),
                 useNativeDriver: false,
             }),
             Animated.timing(rotateAnim, { toValue: isExpanded ? 1 : 0, duration: 300, useNativeDriver: true }),
         ]).start();
-    }, [isExpanded]);
+    }, [isExpanded, targetHeight]);
 
     const rotate = rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
 
@@ -109,12 +108,14 @@ function AccordionRow({ Icon, label, children, isExpanded, onToggle, onNavigate,
 
             {hasChildren && (
                 <Animated.View style={[styles.subMenu, { height: heightAnim }]}>
-                    {children!.map((child) => (
-                        <TouchableOpacity key={child} style={styles.subRow} activeOpacity={0.7} onPress={() => onNavigate?.(child)}>
-                            <View style={styles.subDot} />
-                            <Text style={styles.subLabel}>{child}</Text>
-                        </TouchableOpacity>
-                    ))}
+                    <ScrollView style={{ maxHeight: targetHeight }} nestedScrollEnabled showsVerticalScrollIndicator={true}>
+                        {children!.map((child) => (
+                            <TouchableOpacity key={child} style={styles.subRow} activeOpacity={0.7} onPress={() => onNavigate?.(child)}>
+                                <View style={styles.subDot} />
+                                <Text style={styles.subLabel}>{child}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
                 </Animated.View>
             )}
         </View>
@@ -128,16 +129,12 @@ interface SidebarProps {
     onLogout?: () => void;
 }
 
-// Overlay drawer — stays mounted briefly after `visible` goes false so the
-// slide-out animation can finish before unmounting.
 export default function Sidebar({ visible, onClose, onNavigate, onLogout }: SidebarProps) {
     const [mounted, setMounted] = useState(visible);
+    const [showLogoutAlert, setShowLogoutAlert] = useState(false);
     const translateX = useRef(new Animated.Value(-PANEL_WIDTH)).current;
     const backdropOpacity = useRef(new Animated.Value(0)).current;
 
-    // Accordion state lives HERE, not per-row — so opening one section
-    // always closes whichever one was open, instead of everything stacking
-    // up and overlapping the footer.
     const [expandedKey, setExpandedKey] = useState<string | null>(null);
     const scrollRef = useRef<ScrollView>(null);
     const rowOffsets = useRef<Record<string, number>>({});
@@ -154,9 +151,8 @@ export default function Sidebar({ visible, onClose, onNavigate, onLogout }: Side
                 Animated.timing(translateX, { toValue: -PANEL_WIDTH, duration: 260, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
                 Animated.timing(backdropOpacity, { toValue: 0, duration: 260, useNativeDriver: true }),
             ]).start(() => setMounted(false));
-            setExpandedKey(null); // reset so it opens fresh next time
+            setExpandedKey(null);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visible]);
 
     if (!mounted) return null;
@@ -170,8 +166,6 @@ export default function Sidebar({ visible, onClose, onNavigate, onLogout }: Side
         const opening = expandedKey !== key;
         setExpandedKey(opening ? key : null);
         if (opening) {
-            // Scroll the opened row into view once its submenu has expanded,
-            // so it never ends up hidden behind (or overlapping) the footer.
             setTimeout(() => {
                 const y = rowOffsets.current[key] ?? 0;
                 scrollRef.current?.scrollTo({ y: Math.max(y - 8, 0), animated: true });
@@ -180,13 +174,13 @@ export default function Sidebar({ visible, onClose, onNavigate, onLogout }: Side
     };
 
     return (
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
-            <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: backdropOpacity }]}>
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            <Animated.View style={[StyleSheet.absoluteFill, { opacity: backdropOpacity }]}>
                 <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
             </Animated.View>
 
             <Animated.View style={[styles.panel, { width: PANEL_WIDTH, transform: [{ translateX }] }]}>
-                <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
+                <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFill} />
                 <View style={styles.tint} />
 
                 <View style={styles.panelContent}>
@@ -197,9 +191,6 @@ export default function Sidebar({ visible, onClose, onNavigate, onLogout }: Side
                         </TouchableOpacity>
                     </View>
 
-                    {/* Scrollable now — with only one section ever open, content
-              rarely needs to scroll, but this guarantees nothing ever
-              overlaps the footer even on a short screen. */}
                     <ScrollView ref={scrollRef} style={styles.menuList} showsVerticalScrollIndicator={false}>
                         {MENU.map((item) => (
                             <AccordionRow
@@ -218,13 +209,27 @@ export default function Sidebar({ visible, onClose, onNavigate, onLogout }: Side
                     </ScrollView>
 
                     <View style={styles.footer}>
-                        <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={onLogout}>
+                        <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={() => setShowLogoutAlert(true)}>
                             <LogOut size={18} color="rgba(255,255,255,0.92)" strokeWidth={2} />
                             <Text style={styles.rowLabel}>Log out</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
             </Animated.View>
+
+            <CustomAlertDialog
+                visible={showLogoutAlert}
+                title="Log Out Confirmation"
+                message="Are you sure you want to log out of your account?"
+                confirmText="Log out"
+                cancelText="Cancel"
+                type="danger"
+                onConfirm={() => {
+                    setShowLogoutAlert(false);
+                    onLogout?.();
+                }}
+                onCancel={() => setShowLogoutAlert(false)}
+            />
         </View>
     );
 }
@@ -243,7 +248,7 @@ const styles = StyleSheet.create({
     },
     // Brand-tinted glass instead of the reference's plain black tint, so it
     // still reads as "Pricely" even with no photo background behind it.
-    tint: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(14,29,23,0.55)' },
+    tint: { ...(StyleSheet.absoluteFill as any), backgroundColor: 'rgba(14,29,23,0.55)' },
     panelContent: { flex: 1, paddingHorizontal: 14 },
 
     header: {

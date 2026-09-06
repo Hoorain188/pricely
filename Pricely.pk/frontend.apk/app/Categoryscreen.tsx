@@ -39,7 +39,7 @@ import {
   Watch,
   Wind,
 } from 'lucide-react-native';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -63,7 +63,7 @@ import LottieLoader from '../components/Lottieloader';
 import LottieSearchIcon from '../components/Lottiesearchicon';
 import { useCategories, useSubcategories } from '../hooks/useCatalog';
 import { fetchBrowseProducts, formatPrice } from '../services/api';
-import { SubcategoryProduct, searchProducts } from '../services/catalogService';
+import { SubcategoryProduct, searchProducts, getStoreBadgeStyle } from '../services/catalogService';
 import { colors, fonts, gradients, radii, shadows } from '../theme/colors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -193,7 +193,7 @@ const getIconForTag = (tag: string): LucideIcon => {
   }
 };
 
-const FLASH_DISCOUNTS = [20, 30, 15];
+const FLASH_DISCOUNTS = [25, 35, 15, 20, 30, 40, 18, 22];
 
 const CATEGORY_SALE_TAGS: Record<string, string> = {
   mobiles_tablets: 'smartphone,phone',
@@ -238,66 +238,51 @@ export default function CategoryScreen() {
 
   // Auto-scroll peek animation for category tabs bar (runs on mount + repeats every 10s)
   const tabScrollRef = useRef<ScrollView>(null);
-  const tabUserInteractedRef = useRef(false);
-  const tabTouchPauseTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const tabOffsetRef = useRef(0);
+  const tabAnimIntervalRef = useRef<any>(null);
+  const tabResumeTimerRef = useRef<any>(null);
+  const tabInteractingRef = useRef(false);
+
+  const startTabAutoScroll = useCallback(() => {
+    if (tabAnimIntervalRef.current) clearInterval(tabAnimIntervalRef.current);
+    tabAnimIntervalRef.current = setInterval(() => {
+      if (tabInteractingRef.current) return;
+      tabOffsetRef.current += 2.6;
+      if (tabOffsetRef.current > 850) {
+        tabOffsetRef.current = 0;
+      }
+      tabScrollRef.current?.scrollTo({ x: tabOffsetRef.current, animated: true });
+    }, 25);
+  }, []);
 
   const handleTabTouch = () => {
-    tabUserInteractedRef.current = true;
-    if (tabTouchPauseTimerRef.current) {
-      clearTimeout(tabTouchPauseTimerRef.current);
+    tabInteractingRef.current = true;
+    if (tabAnimIntervalRef.current) {
+      clearInterval(tabAnimIntervalRef.current);
+      tabAnimIntervalRef.current = null;
     }
-    // Pause for 10 seconds on user touch, then auto-resume
-    tabTouchPauseTimerRef.current = setTimeout(() => {
-      tabUserInteractedRef.current = false;
-    }, 10000);
+    if (tabResumeTimerRef.current) {
+      clearTimeout(tabResumeTimerRef.current);
+    }
+    tabResumeTimerRef.current = setTimeout(() => {
+      tabInteractingRef.current = false;
+      startTabAutoScroll();
+    }, 3000);
   };
 
   useEffect(() => {
     if (!categories || categories.length === 0) return;
 
-    let animationFrameId: number;
-
-    const runPeekAnimation = () => {
-      if (tabUserInteractedRef.current) return;
-
-      let scrollPos = 0;
-      const maxScroll = 280;
-      let forward = true;
-
-      const animateScroll = () => {
-        if (tabUserInteractedRef.current) return;
-
-        if (forward) {
-          scrollPos += 0.7;
-          if (scrollPos >= maxScroll) {
-            forward = false;
-          }
-        } else {
-          scrollPos -= 0.7;
-          if (scrollPos <= 0) {
-            scrollPos = 0;
-            tabScrollRef.current?.scrollTo({ x: 0, animated: true });
-            return;
-          }
-        }
-
-        tabScrollRef.current?.scrollTo({ x: scrollPos, animated: false });
-        animationFrameId = requestAnimationFrame(animateScroll);
-      };
-
-      animationFrameId = requestAnimationFrame(animateScroll);
-    };
-
-    const initialTimer = setTimeout(runPeekAnimation, 1000);
-    const intervalId = setInterval(runPeekAnimation, 10000);
+    const startTimer = setTimeout(() => {
+      startTabAutoScroll();
+    }, 1000);
 
     return () => {
-      clearTimeout(initialTimer);
-      clearInterval(intervalId);
-      if (tabTouchPauseTimerRef.current) clearTimeout(tabTouchPauseTimerRef.current);
-      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      clearTimeout(startTimer);
+      if (tabAnimIntervalRef.current) clearInterval(tabAnimIntervalRef.current);
+      if (tabResumeTimerRef.current) clearTimeout(tabResumeTimerRef.current);
     };
-  }, [categories]);
+  }, [categories, startTabAutoScroll]);
 
   useEffect(() => {
     if (route.params?.categoryKey) setActiveCategory(route.params.categoryKey);
@@ -571,26 +556,56 @@ export default function CategoryScreen() {
                   const inputRange = [(index - 1) * FLASH_SNAP, index * FLASH_SNAP, (index + 1) * FLASH_SNAP];
                   const scale = flashScrollX.interpolate({ inputRange, outputRange: [0.9, 1, 0.9], extrapolate: 'clamp' });
                   const opacity = flashScrollX.interpolate({ inputRange, outputRange: [0.6, 1, 0.6], extrapolate: 'clamp' });
-                  const saleTag = CATEGORY_SALE_TAGS[activeCategory] || 'shopping';
-                  const imageLock = activeCategory.length * 15 + index;
+                  
+                  const prod = filteredProducts[index % Math.max(1, filteredProducts.length)];
+                  const slideImage = prod?.imageUrl || loremflickrUri(CATEGORY_SALE_TAGS[activeCategory] || 'shopping', activeCategory.length * 15 + index);
+                  const slideTitle = prod?.name || `Up to ${discount}% off ${categoryLabel} today`;
+                  const slidePrice = prod?.price || null;
 
                   return (
-                    <Animated.View style={[styles.flashSale, { width: FLASH_WIDTH, transform: [{ scale }], opacity }]}>
-                      <Image
-                        source={{ uri: loremflickrUri(saleTag, imageLock) }}
-                        style={styles.flashImage}
-                        contentFit="cover"
-                        transition={200}
-                        cachePolicy="memory-disk"
-                      />
-                      <LinearGradient colors={['transparent', colors.navy]} locations={[0.3, 1]} style={StyleSheet.absoluteFillObject} />
-                      <View style={styles.flashTextWrap}>
-                        <Text style={styles.flashSaleEyebrow}>FLASH SALE</Text>
-                        <Text style={styles.flashSaleHeadline}>
-                          Up to {discount}% off {categoryLabel} today
-                        </Text>
-                      </View>
-                    </Animated.View>
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      onPress={() => {
+                        if (prod) {
+                          navigation.navigate('ProductDetail', {
+                            id: prod.id,
+                            handle: prod.handle,
+                            url: prod.url,
+                            productName: prod.name,
+                            currentPrice: prod.price,
+                            imageUrl: prod.imageUrl,
+                            store: prod.store,
+                          });
+                        }
+                      }}
+                    >
+                      <Animated.View style={[styles.flashSale, { width: FLASH_WIDTH, transform: [{ scale }], opacity }]}>
+                        <Image
+                          source={{ uri: slideImage }}
+                          style={styles.flashImage}
+                          contentFit="cover"
+                          transition={200}
+                          cachePolicy="memory-disk"
+                        />
+                        <LinearGradient colors={['transparent', 'rgba(11,30,61,0.5)', colors.navy]} locations={[0.2, 0.6, 1]} style={StyleSheet.absoluteFill} />
+                        <View style={styles.flashTextWrap}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            <View style={{ backgroundColor: '#E74C3C', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                              <Text style={{ color: '#FFF', fontSize: 10, fontFamily: fonts.button }}>HOT DEAL</Text>
+                            </View>
+                            <Text style={styles.flashSaleEyebrow}>UP TO {discount}% OFF</Text>
+                          </View>
+                          <Text style={styles.flashSaleHeadline} numberOfLines={1}>
+                            {slideTitle}
+                          </Text>
+                          {slidePrice ? (
+                            <Text style={{ color: '#2DD4BF', fontSize: 13, fontFamily: fonts.headlineBold, marginTop: 2 }}>
+                              {slidePrice} {prod?.store ? `• ${prod.store}` : ''}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </Animated.View>
+                    </TouchableOpacity>
                   );
                 }}
               />
@@ -655,35 +670,16 @@ export default function CategoryScreen() {
                     <Text style={styles.priceDropBadgeText}>📉 Price Drop</Text>
                   </View>
                 ) : null}
-                {product.store ? (
-                  <View
-                    style={[
-                      styles.storeBadge,
-                      product.store.toLowerCase() === 'daraz'
-                        ? { backgroundColor: '#FFF0E6' }
-                        : product.store.toLowerCase() === 'telemart'
-                        ? { backgroundColor: '#EAF4EF' }
-                        : product.store.toLowerCase() === 'mega.pk'
-                        ? { backgroundColor: '#E7EEFC' }
-                        : null,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.storeBadgeText,
-                        product.store.toLowerCase() === 'daraz'
-                          ? { color: '#F57224' }
-                          : product.store.toLowerCase() === 'telemart'
-                          ? { color: '#1D9A7C' }
-                          : product.store.toLowerCase() === 'mega.pk'
-                          ? { color: '#2F6FB0' }
-                          : null,
-                      ]}
-                    >
-                      {product.store}
-                    </Text>
-                  </View>
-                ) : null}
+                {product.store ? (() => {
+                  const sMeta = getStoreBadgeStyle(product.store);
+                  return (
+                    <View style={[styles.storeBadge, { backgroundColor: sMeta.bg, borderColor: sMeta.border, borderWidth: 1 }]}>
+                      <Text style={[styles.storeBadgeText, { color: sMeta.color, fontFamily: fonts.button }]}>
+                        {product.store}
+                      </Text>
+                    </View>
+                  );
+                })() : null}
               </View>
             </TouchableOpacity>
           )}
@@ -788,7 +784,7 @@ const styles = StyleSheet.create({
 
   flashScroll: { marginBottom: 18, flexGrow: 0 },
   flashSale: { borderRadius: radii.medium, marginRight: 10, overflow: 'hidden', height: 110 },
-  flashImage: { ...StyleSheet.absoluteFillObject },
+  flashImage: { ...(StyleSheet.absoluteFill as any) },
   flashTextWrap: { flex: 1, justifyContent: 'flex-end', padding: 14 },
   flashSaleEyebrow: { fontSize: 11, fontFamily: fonts.button, color: colors.accentMango, letterSpacing: 1, marginBottom: 4 },
   flashSaleHeadline: { fontSize: 14, fontFamily: fonts.label, color: colors.onDarkPrimary },

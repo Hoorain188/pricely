@@ -42,7 +42,7 @@ export interface Subcategory {
 // ---------------------------------------------------------------------------
 //  10 FIXED TECH CATEGORIES — dono stores (Telemart + Mega.pk) same slugs
 // ---------------------------------------------------------------------------
-const CATEGORIES: Category[] = [
+export const CATEGORIES: Category[] = [
   { key: 'mobiles_tablets',     label: 'Mobiles & Tablets' },
   { key: 'laptops_computers',  label: 'Laptops & Computers' },
   { key: 'tv_entertainment',   label: 'TVs & Entertainment' },
@@ -54,6 +54,55 @@ const CATEGORIES: Category[] = [
   { key: 'gaming',             label: 'Gaming' },
   { key: 'accessories',        label: 'Accessories' },
 ];
+
+export const CATEGORY_LABEL_TO_KEY: Record<string, string> = {
+  'Mobiles & Tablets': 'mobiles_tablets',
+  'Mobiles': 'mobiles_tablets',
+  'Laptops & Computers': 'laptops_computers',
+  'TVs & Entertainment': 'tv_entertainment',
+  'TV & Entertainment': 'tv_entertainment',
+  'Home Appliances': 'home_appliances',
+  'Kitchen Appliances': 'kitchen_appliances',
+  'Cameras': 'cameras',
+  'Audio': 'audio',
+  'Wearables': 'wearables',
+  'Gaming': 'gaming',
+  'Accessories': 'accessories',
+};
+
+export function getCategoryKeyFromLabel(label: string): string {
+  if (CATEGORY_LABEL_TO_KEY[label]) return CATEGORY_LABEL_TO_KEY[label];
+  const lower = (label || '').toLowerCase();
+  if (lower.includes('mobile') || lower.includes('phone') || lower.includes('tablet')) return 'mobiles_tablets';
+  if (lower.includes('laptop') || lower.includes('computer')) return 'laptops_computers';
+  if (lower.includes('tv') || lower.includes('entertainment')) return 'tv_entertainment';
+  if (lower.includes('kitchen')) return 'kitchen_appliances';
+  if (lower.includes('home') || lower.includes('appliance')) return 'home_appliances';
+  if (lower.includes('camera')) return 'cameras';
+  if (lower.includes('audio') || lower.includes('sound')) return 'audio';
+  if (lower.includes('wear') || lower.includes('watch')) return 'wearables';
+  if (lower.includes('game') || lower.includes('gaming')) return 'gaming';
+  if (lower.includes('access')) return 'accessories';
+  return 'mobiles_tablets';
+}
+
+export const STORE_BADGE_STYLES: Record<string, { bg: string; color: string; border: string }> = {
+  daraz: { bg: '#FFF0E6', color: '#F57224', border: 'rgba(245,114,36,0.35)' },
+  telemart: { bg: '#EAF4EF', color: '#1D9A7C', border: 'rgba(29,154,124,0.35)' },
+  'mega.pk': { bg: '#E7EEFC', color: '#2F6FB0', border: 'rgba(47,111,176,0.35)' },
+  megapk: { bg: '#E7EEFC', color: '#2F6FB0', border: 'rgba(47,111,176,0.35)' },
+  amazon: { bg: '#FEF3C7', color: '#B45309', border: 'rgba(180,83,9,0.35)' },
+  default: { bg: '#F1F5F9', color: '#475569', border: 'rgba(71,85,105,0.35)' },
+};
+
+export function getStoreBadgeStyle(storeName?: string) {
+  const key = (storeName || '').toLowerCase().trim();
+  if (key.includes('daraz')) return STORE_BADGE_STYLES.daraz;
+  if (key.includes('telemart')) return STORE_BADGE_STYLES.telemart;
+  if (key.includes('mega')) return STORE_BADGE_STYLES['mega.pk'];
+  if (key.includes('amazon')) return STORE_BADGE_STYLES.amazon;
+  return STORE_BADGE_STYLES.default;
+}
 
 const MOCK_TRENDING = ['Redmi Note 13', 'Air Fryer 5L', 'PS5 slim', 'iPhone 15', 'Smart Watch', 'MacBook Air'];
 

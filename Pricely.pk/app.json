@@ -34,7 +34,10 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "expo-image",
+      "expo-sharing",
+      "expo-splash-screen"
     ],
     "extra": {
       "eas": {

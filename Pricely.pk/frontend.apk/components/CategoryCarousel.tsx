@@ -1,45 +1,51 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Animated, StyleSheet, Dimensions } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Animated, StyleSheet, Dimensions, ScrollView } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import LottieSearchIcon from './Lottiesearchicon';
 import { colors, gradients, radii, fonts, shadows } from '../theme/colors';
 import { Category } from '../services/catalogService';
+import { fetchBrowseProducts, ApiProduct } from '../services/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = SCREEN_WIDTH * 0.62;
+const CARD_WIDTH = SCREEN_WIDTH * 0.68;
 const CARD_SPACING = 14;
 const SNAP = CARD_WIDTH + CARD_SPACING;
 const SIDE_PADDING = 20;
 
-// Demo photos standing in for real category imagery until the catalog API
-// supplies real product/category images. Using LoremFlickr (keyword-tagged
-// Creative-Commons Flickr photos, no API key) instead of Unsplash's old
-// `source.unsplash.com` redirect service — that one is heavily
-// rate-limited/deprecated now and was the reason images weren't loading.
-//
-// Single specific tags (not comma-combined) match more reliably, and the
-// `lock` value pins a specific photo per category so it doesn't change
-// randomly on every reload — e.g. Mobiles always shows an actual phone.
-const CATEGORY_IMAGE: Record<string, { tag: string; lock: number }> = {
-    mobiles_tablets: { tag: 'iphone', lock: 34 },
-    laptops_computers: { tag: 'laptop', lock: 12 },
-    tv_entertainment: { tag: 'television', lock: 8 },
-    home_appliances: { tag: 'fridge', lock: 45 },
-    kitchen_appliances: { tag: 'kitchen', lock: 19 },
-    cameras: { tag: 'camera', lock: 27 },
-    audio: { tag: 'headphones', lock: 5 },
-    wearables: { tag: 'smartwatch', lock: 44 },
-    gaming: { tag: 'gaming', lock: 11 },
-    accessories: { tag: 'charger', lock: 63 },
+export const CATEGORY_IMAGE_MAP: Record<string, string> = {
+  mobiles_tablets: 'https://images.unsplash.com/photo-1592899677977-9c10ca588bbd?w=600&auto=format&fit=crop&q=80',
+  laptops_computers: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600&auto=format&fit=crop&q=80',
+  tv_entertainment: 'https://images.unsplash.com/photo-1593784991095-a205069470b6?w=600&auto=format&fit=crop&q=80',
+  home_appliances: 'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?w=600&auto=format&fit=crop&q=80',
+  kitchen_appliances: 'https://images.unsplash.com/photo-1585515320310-259814833e62?w=600&auto=format&fit=crop&q=80',
+  cameras: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600&auto=format&fit=crop&q=80',
+  audio: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=600&auto=format&fit=crop&q=80',
+  wearables: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80',
+  gaming: 'https://images.unsplash.com/photo-1606813907291-d86efa9b94db?w=600&auto=format&fit=crop&q=80',
+  accessories: 'https://images.unsplash.com/photo-1625772452859-1c03d5bf1137?w=600&auto=format&fit=crop&q=80',
+  default: 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=600&auto=format&fit=crop&q=80',
 };
-export const loremflickrUri = (tag: string, lock: number) => `https://loremflickr.com/500/700/${tag}?lock=${lock}`;
+
+export const loremflickrUri = (tag: string, lock: number) => {
+    const key = tag.toLowerCase();
+    for (const k of Object.keys(CATEGORY_IMAGE_MAP)) {
+        if (key.includes(k)) return CATEGORY_IMAGE_MAP[k];
+    }
+    return CATEGORY_IMAGE_MAP.default;
+};
 
 export const categoryImageUri = (key: string) => {
-    const entry = CATEGORY_IMAGE[key] || { tag: 'shopping', lock: 1 };
-    return loremflickrUri(entry.tag, entry.lock);
+    return CATEGORY_IMAGE_MAP[key] || CATEGORY_IMAGE_MAP.default;
 };
+
+export function getValidProductImage(imageUrl?: string | null, categoryKey?: string, productName?: string): string {
+    if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
+        return imageUrl;
+    }
+    return categoryImageUri(categoryKey || productName || 'default');
+}
 
 const SEARCH_EXAMPLES = [
     '"Redmi Note 13"...',
@@ -50,22 +56,38 @@ const SEARCH_EXAMPLES = [
 ];
 
 interface CategoryCarouselProps {
-    categories: Category[]; // excludes "All" — pass only real categories
+    categories: Category[];
     storeCount: number;
     onExplore: (categoryKey: string) => void;
     onSearchSubmit?: (query: string) => void;
 }
 
-// One unified hero card — light-green-to-navy gradient background, search
-// bar pinned at the top and the coverflow category carousel living
-// directly underneath it, both inside the same rounded panel (not two
-// separate stacked cards).
+const _productCache: Record<string, ApiProduct[]> = {};
+
 export default function CategoryCarousel({ categories, storeCount, onExplore, onSearchSubmit }: CategoryCarouselProps) {
+    const navigation = useNavigation<any>();
     const scrollX = useRef(new Animated.Value(0)).current;
     const [searchValue, setSearchValue] = useState('');
+    const [categoryProducts, setCategoryProducts] = useState<Record<string, ApiProduct[]>>({});
+    const [activeIdx, setActiveIdx] = useState(0);
 
     const [placeholderIndex, setPlaceholderIndex] = useState(0);
     const placeholderAnim = useRef(new Animated.Value(1)).current;
+
+    useEffect(() => {
+        if (!categories || categories.length === 0) return;
+        const randomSeed = Math.floor(Math.random() * 100000);
+        categories.forEach((cat) => {
+            fetchBrowseProducts(cat.key, undefined, randomSeed, 1, 16)
+                .then((res) => {
+                    if (res.results && res.results.length > 0) {
+                        const shuffled = [...res.results].sort(() => Math.random() - 0.5);
+                        setCategoryProducts((prev) => ({ ...prev, [cat.key]: shuffled }));
+                    }
+                })
+                .catch(() => {});
+        });
+    }, [categories]);
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -77,6 +99,8 @@ export default function CategoryCarousel({ categories, storeCount, onExplore, on
         return () => clearInterval(interval);
     }, []);
 
+    const activeCategory = categories[activeIdx] || categories[0];
+
     return (
         <LinearGradient
             colors={gradients.heroCarousel}
@@ -85,8 +109,7 @@ export default function CategoryCarousel({ categories, storeCount, onExplore, on
             end={{ x: 1, y: 1 }}
             style={styles.hero}
         >
-            {/* Search bar — a frosted dark panel sitting ON the gradient, not a
-          separate card, so it reads as one piece with the carousel below. */}
+            {/* Search bar */}
             <View style={styles.searchPanel}>
                 <Text style={styles.searchEyebrow}>SEARCH ACROSS {storeCount} STORES</Text>
                 <View style={styles.searchBar}>
@@ -109,8 +132,7 @@ export default function CategoryCarousel({ categories, storeCount, onExplore, on
                 </View>
             </View>
 
-            {/* Coverflow-style category carousel — centered card full scale/
-          opacity, neighbors shrink and fade on scroll. */}
+            {/* Top Category Coverflow Cards */}
             <Animated.FlatList
                 data={categories}
                 horizontal
@@ -118,35 +140,60 @@ export default function CategoryCarousel({ categories, storeCount, onExplore, on
                 showsHorizontalScrollIndicator={false}
                 snapToInterval={SNAP}
                 decelerationRate="fast"
-                contentContainerStyle={{ paddingHorizontal: SIDE_PADDING }}
-                onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: true })}
+                contentContainerStyle={{ paddingHorizontal: SIDE_PADDING, paddingBottom: 4 }}
+                onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
+                    useNativeDriver: false,
+                    listener: (e: any) => {
+                        const offsetX = e.nativeEvent.contentOffset.x;
+                        const index = Math.min(Math.max(0, Math.round(offsetX / SNAP)), categories.length - 1);
+                        if (index !== activeIdx) {
+                            setActiveIdx(index);
+                        }
+                    },
+                })}
                 scrollEventThrottle={16}
                 renderItem={({ item, index }: { item: Category; index: number }) => {
                     const inputRange = [(index - 1) * SNAP, index * SNAP, (index + 1) * SNAP];
-                    const scale = scrollX.interpolate({ inputRange, outputRange: [0.86, 1, 0.86], extrapolate: 'clamp' });
-                    const opacity = scrollX.interpolate({ inputRange, outputRange: [0.55, 1, 0.55], extrapolate: 'clamp' });
+                    const scale = scrollX.interpolate({ inputRange, outputRange: [0.88, 1, 0.88], extrapolate: 'clamp' });
+                    const opacity = scrollX.interpolate({ inputRange, outputRange: [0.6, 1, 0.6], extrapolate: 'clamp' });
+
+                    const isCurrent = index === activeIdx;
+                    const fetchedProds = categoryProducts[item.key] || [];
+                    const topProductImg = fetchedProds[0]?.imageUrl;
+                    const cardImgUri = getValidProductImage(topProductImg, item.key);
 
                     return (
-                        <TouchableOpacity activeOpacity={0.92} onPress={() => onExplore(item.key)}>
-                            <Animated.View style={[styles.card, { marginRight: CARD_SPACING, transform: [{ scale }], opacity }]}>
+                        <TouchableOpacity activeOpacity={0.92} onPress={() => {
+                            setActiveIdx(index);
+                            onExplore(item.key);
+                        }}>
+                            <Animated.View style={[
+                                styles.card,
+                                { marginRight: CARD_SPACING, transform: [{ scale }], opacity },
+                                isCurrent && styles.activeCardBorder,
+                            ]}>
                                 <Image
-                                    source={{ uri: categoryImageUri(item.key) }}
+                                    source={{ uri: cardImgUri }}
                                     style={styles.cardImage}
                                     contentFit="cover"
                                     transition={200}
                                     cachePolicy="memory-disk"
                                 />
-                                {/* Same light-green-to-navy direction as the hero background,
-                    just steeper, so each card's text stays legible. */}
                                 <LinearGradient
-                                    colors={['transparent', 'rgba(11,30,61,0.35)', colors.navy]}
-                                    locations={[0, 0.55, 1]}
-                                    style={StyleSheet.absoluteFillObject}
+                                    colors={['transparent', 'rgba(11,30,61,0.4)', 'rgba(7,18,36,0.92)']}
+                                    locations={[0, 0.45, 1]}
+                                    style={StyleSheet.absoluteFill}
                                 />
                                 <View style={styles.cardContent}>
-                                    <Text style={styles.cardTitle}>{item.label}</Text>
-                                    <View style={styles.explorePill}>
-                                        <Text style={styles.explorePillText}>Explore</Text>
+                                    <View style={styles.categoryBadge}>
+                                        <Text style={styles.categoryBadgeText}>CATEGORY</Text>
+                                    </View>
+                                    <Text style={styles.cardTitle} numberOfLines={1}>{item.label}</Text>
+                                    <View style={styles.cardBottomRow}>
+                                        <Text style={styles.productCountBadge}>8 Products</Text>
+                                        <View style={styles.explorePill}>
+                                            <Text style={styles.explorePillText}>Explore →</Text>
+                                        </View>
                                     </View>
                                 </View>
                             </Animated.View>
@@ -162,12 +209,11 @@ const styles = StyleSheet.create({
     hero: {
         borderRadius: radii.large,
         paddingTop: 12,
-        paddingBottom: 12,
+        paddingBottom: 14,
         marginBottom: 16,
         overflow: 'hidden',
         ...shadows.card,
     },
-
     searchPanel: {
         marginHorizontal: 14,
         backgroundColor: 'rgba(11,30,61,0.45)',
@@ -175,7 +221,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.14)',
         padding: 12,
-        marginBottom: 10,
+        marginBottom: 12,
     },
     searchEyebrow: { fontSize: 10, fontFamily: fonts.button, color: 'rgba(255,255,255,0.75)', letterSpacing: 1, marginBottom: 8 },
     searchBar: {
@@ -199,29 +245,49 @@ const styles = StyleSheet.create({
         color: 'rgba(255,255,255,0.7)',
     },
 
-    // 130 instead of 190 — this one number was most of the wasted space.
     card: {
         width: CARD_WIDTH,
-        height: 130,
+        height: 140,
         borderRadius: radii.medium,
         overflow: 'hidden',
         backgroundColor: colors.navy,
+        borderWidth: 1.5,
+        borderColor: 'rgba(255,255,255,0.15)',
     },
-    cardImage: { ...StyleSheet.absoluteFillObject },
+    activeCardBorder: {
+        borderColor: '#1D9A7C',
+        borderWidth: 2,
+    },
+    cardImage: { ...(StyleSheet.absoluteFill as any) },
     cardContent: { flex: 1, justifyContent: 'flex-end', padding: 12 },
+    categoryBadge: {
+        alignSelf: 'flex-start',
+        backgroundColor: 'rgba(29, 154, 124, 0.85)',
+        paddingVertical: 2,
+        paddingHorizontal: 8,
+        borderRadius: 4,
+        marginBottom: 4,
+    },
+    categoryBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 9,
+        fontFamily: fonts.button,
+        letterSpacing: 0.5,
+    },
     cardTitle: {
-        fontSize: 14,
-        fontFamily: fonts.headline,
+        fontSize: 15,
+        fontFamily: fonts.headlineBold,
         color: colors.onDarkPrimary,
-        marginBottom: 6,
+        marginBottom: 4,
         textTransform: 'uppercase',
     },
+    cardBottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+    productCountBadge: { fontSize: 11, fontFamily: fonts.button, color: 'rgba(255,255,255,0.85)' },
     explorePill: {
-        alignSelf: 'flex-start',
-        backgroundColor: colors.surface,
-        borderRadius: radii.pill,
-        paddingHorizontal: 14,
-        paddingVertical: 5,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        borderRadius: radii.small,
+        paddingVertical: 4,
+        paddingHorizontal: 10,
     },
-    explorePillText: { fontSize: 10, fontFamily: fonts.button, color: colors.accentSolid, letterSpacing: 0.5, textTransform: 'uppercase' },
+    explorePillText: { fontSize: 11, fontFamily: fonts.button, color: colors.onDarkPrimary },
 });

@@ -36,11 +36,12 @@ export const loremflickrUri = (tag: string, lock: number) => {
     return CATEGORY_IMAGE_MAP.default;
 };
 
-export const categoryImageUri = (key: string) => {
+export const categoryImageUri = (key?: string | null) => {
+    if (!key) return CATEGORY_IMAGE_MAP.default;
     return CATEGORY_IMAGE_MAP[key] || CATEGORY_IMAGE_MAP.default;
 };
 
-export function getValidProductImage(imageUrl?: string | null, categoryKey?: string, productName?: string): string {
+export function getValidProductImage(imageUrl?: string | null, categoryKey?: string | null, productName?: string | null): string {
     if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
         return imageUrl;
     }

@@ -20,6 +20,7 @@ import LottieHamburger from '../components/LottieHamburger';
 import LottieBackButton from '../components/Lottiebackbutton';
 import CustomAlertDialog from '../components/CustomAlertDialog';
 import { api, ApiError, formatPrice, type ShopperAlert } from './api/client';
+import { getValidProductImage } from '../components/CategoryCarousel';
 
 export default function AlertsScreen() {
   const navigation = useNavigation<any>();
@@ -165,15 +166,11 @@ export default function AlertsScreen() {
               }
             >
               <View style={styles.mainInfo}>
-                {item.imageUrl ? (
-                  <Image
-                    source={{ uri: item.imageUrl }}
-                    style={styles.dealImage}
-                    resizeMode="contain"
-                  />
-                ) : (
-                  <View style={[styles.dealImage, styles.dealImageEmpty]} />
-                )}
+                <Image
+                  source={{ uri: getValidProductImage(item.imageUrl, undefined, item.title) }}
+                  style={styles.dealImage}
+                  resizeMode="contain"
+                />
 
                 <View style={styles.details}>
                   <Text style={styles.productName} numberOfLines={2}>

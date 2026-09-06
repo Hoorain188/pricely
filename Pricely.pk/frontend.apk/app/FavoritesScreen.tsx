@@ -20,6 +20,7 @@ import Sidebar from '../components/Sidebar';
 import LottieHamburger from '../components/LottieHamburger';
 import LottieBackButton from '../components/Lottiebackbutton';
 import { api, ApiError, formatPrice, type ShopperFavorite } from './api/client';
+import { getValidProductImage } from '../components/CategoryCarousel';
 
 export default function FavoritesScreen() {
   const navigation = useNavigation<any>();
@@ -149,11 +150,11 @@ export default function FavoritesScreen() {
           })
         }
       >
-        {item.imageUrl ? (
-          <Image source={{ uri: item.imageUrl }} style={styles.dealImage} resizeMode="contain" />
-        ) : (
-          <View style={[styles.dealImage, styles.dealImageEmpty]} />
-        )}
+        <Image
+          source={{ uri: getValidProductImage(item.imageUrl, undefined, item.title) }}
+          style={styles.dealImage}
+          resizeMode="contain"
+        />
 
         <View style={styles.detailsContainer}>
           <View style={styles.nameRow}>

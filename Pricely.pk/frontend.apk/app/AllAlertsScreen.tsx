@@ -12,6 +12,7 @@ import {
 import { ArrowLeft, BellOff } from 'lucide-react-native';
 import { colors, fonts, radii } from '../theme/colors';
 import { api, ApiError, formatPrice, type AdminAlert } from './api/client';
+import { getValidProductImage } from '../components/CategoryCarousel';
 
 interface AllAlertsScreenProps {
   navigation: { goBack: () => void };
@@ -92,11 +93,11 @@ export default function AllAlertsScreen({ navigation }: AllAlertsScreenProps) {
       <View style={styles.list}>
         {alerts.map((a) => (
           <View key={a.id} style={[styles.row, a.isTriggered && styles.rowHit]}>
-            {a.imageUrl ? (
-              <Image source={{ uri: a.imageUrl }} style={styles.thumb} resizeMode="contain" />
-            ) : (
-              <View style={[styles.thumb, styles.thumbEmpty]} />
-            )}
+            <Image
+              source={{ uri: getValidProductImage(a.imageUrl, undefined, a.title) }}
+              style={styles.thumb}
+              resizeMode="contain"
+            />
 
             <View style={{ flex: 1 }}>
               <Text style={styles.rowTitle} numberOfLines={2}>

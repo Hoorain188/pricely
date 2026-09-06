@@ -24,6 +24,7 @@ import { useUserStore } from '../context/UserStore';
 import LottieLoader from '../components/Lottieloader';
 import LottieBackButton from '../components/Lottiebackbutton';
 import CustomAlertDialog from '../components/CustomAlertDialog';
+import { categoryImageUri, getValidProductImage } from '../components/CategoryCarousel';
 import { fetchProductDetail, fetchMegaPkProductDetail, fetchDarazProductDetail, fetchCompare, fetchPriceHistory, formatPrice, stripHtml, ProductDetail, CompareResponse, PriceHistoryResponse } from '../services/api';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -200,7 +201,15 @@ export default function ProductDetailScreen() {
     try {
       console.log('[ALERT] listingId:', numListingId, 'target:', target);
       await api.setAlert(numListingId, target);
-      addAlert({ name: productName, targetPrice: String(target), currentPrice });
+      const alertImage = detail?.images?.[0] || route.params?.imageUrl || categoryImageUri(route.params?.categoryKey || productName || 'default');
+      addAlert({
+        name: productName,
+        targetPrice: String(target),
+        currentPrice,
+        imageUrl: alertImage,
+        categoryKey: route.params?.categoryKey,
+        store: detail?.store || displayStoreName,
+      });
       setSuccessMessage(
         `We will notify you once ${productName} drops below Rs ${target.toLocaleString()}`,
       );

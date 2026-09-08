@@ -22,16 +22,21 @@ export default function AdminSettingsScreen({ navigation }: AdminSettingsScreenP
   const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
   const [ready, setReady] = useState(false);
   const [teamCount, setTeamCount] = useState<number | null>(null);
+  const [twoFactorOn, setTwoFactorOn] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [prefsRes, teamRes] = await Promise.all([
+      const [prefsRes, teamRes, twoFactorRes] = await Promise.all([
         api.notificationPrefs(),
         api.team(),
+        // Its own catch: this row should say what it knows, and a failure
+        // here must not blank the whole settings screen.
+        api.twoFactorStatus().catch(() => null),
       ]);
       setPrefs(prefsRes);
       setTeamCount(teamRes.totalCount);
+      setTwoFactorOn(twoFactorRes?.enabled ?? null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not load settings.');
     } finally {
@@ -136,12 +141,18 @@ export default function AdminSettingsScreen({ navigation }: AdminSettingsScreenP
               <Text style={styles.rowLabel}>Change password</Text>
               <Text style={styles.rowValue}>Update ›</Text>
             </TouchableOpacity>
-            <View style={styles.row}>
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => navigation.navigate('TwoFactor')}
+            >
               <Text style={styles.rowLabel}>Two-factor authentication</Text>
-              {/* Not built yet. Saying OFF is honest; saying ON is a lie that
-                  makes people think they are protected when they are not. */}
-              <Text style={styles.rowValueMuted}>Coming soon</Text>
-            </View>
+              {/* Read from the server rather than assumed. A row that claims
+                  "On" while the account has nothing set up is worse than no
+                  row at all — it tells someone they are protected. */}
+              <Text style={twoFactorOn ? styles.rowValue : styles.rowValueMuted}>
+                {twoFactorOn === null ? '—' : twoFactorOn ? 'On' : 'Off'}
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('ActiveSessions')}>
               <Text style={styles.rowLabel}>Active sessions</Text>
               <Text style={styles.rowValue}>Manage devices ›</Text>

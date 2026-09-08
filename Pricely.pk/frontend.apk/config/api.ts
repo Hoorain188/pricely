@@ -12,7 +12,10 @@ import Constants from 'expo-constants';
  * Set EXPO_PUBLIC_API_URL to override — that's what to point at the
  * deployed URL once the API is hosted somewhere.
  */
-const DEV_PORT = 5059;
+// Must match applicationUrl in backend/Pricely.Api/Properties/launchSettings.json.
+// It read 5059 while the API served 5099, so nothing connected in Expo Go —
+// and the failure looks like a dead network rather than a wrong port.
+const DEV_PORT = 5099;
 
 function resolveBaseUrl(): string {
   const override = process.env.EXPO_PUBLIC_API_URL;

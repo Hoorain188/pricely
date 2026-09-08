@@ -33,6 +33,7 @@ public class AppDbContext : DbContext
     public DbSet<VerificationCode> VerificationCodes => Set<VerificationCode>();
     public DbSet<PendingSignup> PendingSignups => Set<PendingSignup>();
     public DbSet<PushToken> PushTokens => Set<PushToken>();
+    public DbSet<BackupCode> BackupCodes => Set<BackupCode>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {

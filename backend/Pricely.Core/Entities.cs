@@ -25,6 +25,17 @@ public class User
     /// </summary>
     public DateTimeOffset? EmailVerifiedAt { get; set; }
 
+    /// <summary>
+    /// Base32 TOTP secret, shared with the authenticator app. Set when setup
+    /// starts; 2FA only takes effect once TotpEnabled flips, so abandoning
+    /// setup halfway cannot lock anyone out.
+    /// Added by db/011_two_factor.sql.
+    /// </summary>
+    public string? TotpSecret { get; set; }
+
+    /// <summary>True only after a first code has been confirmed.</summary>
+    public bool TotpEnabled { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 
@@ -388,6 +399,24 @@ public class PendingSignup
     /// it by mistake.
     /// </summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromHours(24);
+}
+
+/// <summary>
+/// A one-time recovery code, for signing in when the authenticator app is
+/// gone. Stored hashed: the plain codes are shown once at setup and never
+/// again, so a database dump is not a set of working keys.
+/// Added by db/011_two_factor.sql.
+/// </summary>
+public class BackupCode
+{
+    public long Id { get; set; }
+    public long UserId { get; set; }
+    public string CodeHash { get; set; } = "";
+
+    /// <summary>Single use. Kept rather than deleted so "codes remaining" is answerable.</summary>
+    public DateTimeOffset? UsedAt { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 public class VerificationCode

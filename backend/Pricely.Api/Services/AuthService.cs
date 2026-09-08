@@ -15,6 +15,7 @@ public class AuthService
 
     private readonly AppDbContext _db;
     private readonly ITokenService _tokens;
+    private readonly ITwoFactorService _twoFactor;
     private readonly IEmailSender _email;
     private readonly IActivityLogger _activity;
     private readonly JwtOptions _jwt;
@@ -23,6 +24,7 @@ public class AuthService
     public AuthService(
         AppDbContext db,
         ITokenService tokens,
+        ITwoFactorService twoFactor,
         IEmailSender email,
         IActivityLogger activity,
         IOptions<JwtOptions> jwt,
@@ -30,6 +32,7 @@ public class AuthService
     {
         _db = db;
         _tokens = tokens;
+        _twoFactor = twoFactor;
         _email = email;
         _activity = activity;
         _jwt = jwt.Value;
@@ -188,6 +191,23 @@ public class AuthService
         var isBackOffice = user.Role != UserRole.User;
         if (wantsBackOffice != isBackOffice)
             throw new AuthException("invalid_credentials", "Incorrect email or password.", StatusCodes.Status401Unauthorized);
+
+        // Two-factor, after the password is known good and before anything is
+        // issued. Asked for here rather than at a separate endpoint so there
+        // is only ever one way to obtain a session.
+        if (user.TotpEnabled)
+        {
+            if (string.IsNullOrWhiteSpace(req.TwoFactorCode))
+                throw new AuthException(
+                    "two_factor_required",
+                    "Enter the 6-digit code from your authenticator app.");
+
+            if (!await _twoFactor.VerifyAsync(user.Id, req.TwoFactorCode, ct))
+                throw new AuthException(
+                    "invalid_code",
+                    "That code isn't right. Check the app and try again.",
+                    StatusCodes.Status401Unauthorized);
+        }
 
         if (!user.IsActive)
         {

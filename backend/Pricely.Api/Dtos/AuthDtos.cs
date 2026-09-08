@@ -23,7 +23,16 @@ public record LoginRequest(
     [Required, EmailAddress] string Email,
     [Required] string Password,
     Portal Portal,
-    string? DeviceName);
+    string? DeviceName,
+
+    /// <summary>
+    /// The authenticator code, when the account has two-factor on. Omitted on
+    /// the first attempt: the server answers "two_factor_required" and the app
+    /// asks for it, then sends everything again. Carrying the password a
+    /// second time rather than issuing an interim token keeps this to one
+    /// endpoint and one kind of credential.
+    /// </summary>
+    string? TwoFactorCode = null);
 
 public record VerifyCodeRequest(
     [Required, EmailAddress] string Email,

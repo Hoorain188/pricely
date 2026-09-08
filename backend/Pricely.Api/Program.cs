@@ -245,6 +245,7 @@ builder.Services.AddScoped<IActivityLogger, ActivityLogger>();
 
 // Notifications. Push goes over HTTPS to Expo, so unlike the emailed
 // verification codes it is not affected by outbound SMTP being blocked.
+builder.Services.AddScoped<ITwoFactorService, TwoFactorService>();
 builder.Services.AddScoped<IPushSender, PushSender>();
 builder.Services.AddScoped<IPriceAlertChecker, PriceAlertChecker>();
 

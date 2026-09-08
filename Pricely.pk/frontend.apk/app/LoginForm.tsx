@@ -50,6 +50,13 @@ const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(function LoginForm(
   const [password, setPassword] = useState('');
   const [agree, setAgree] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
+
+  // Set once the server says the account has two-factor on. The form then
+  // shows a code field and sends everything again — including the password,
+  // which is why it stays in state rather than being cleared on the first
+  // attempt.
+  const [needsTwoFactor, setNeedsTwoFactor] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [formError, setFormError] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
   const { setAuth } = useAuthStore();
@@ -101,12 +108,21 @@ const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(function LoginForm(
         password,
         portal: role === 'admin' ? 'admin' : 'user',
         deviceName: `${Device.deviceName ?? Platform.OS} (${Platform.OS})`,
+        twoFactorCode: needsTwoFactor ? twoFactorCode.trim() : undefined,
       });
 
       await setAuth(result.user, result.accessToken, result.refreshToken);
       onAuthenticated?.();
     } catch (error) {
       if (error instanceof authService.ApiError) {
+        // Not a failure — the password was right and the account wants a
+        // code. Switch the form over and say nothing red.
+        if (error.code === 'two_factor_required') {
+          setNeedsTwoFactor(true);
+          setFormError(undefined);
+          return;
+        }
+
         // The server already writes these for a person to read, including
         // the deliberately vague ones — showing them as-is avoids inventing
         // a friendlier message that leaks more than the server intended.
@@ -175,9 +191,30 @@ const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(function LoginForm(
         {errors.agree ? <Text style={styles.checkboxErrorText}>{errors.agree}</Text> : null}
       </Reveal>
 
+      {needsTwoFactor ? (
+        <Reveal anim={anims[3]}>
+          <FloatingLabelInput
+            label="Authenticator code"
+            icon={Lock}
+            value={twoFactorCode}
+            onChangeText={setTwoFactorCode}
+            keyboardType="number-pad"
+            autoFocus
+          />
+          <Text style={styles.twoFactorHint}>
+            Open your authenticator app for the 6-digit code, or enter one of your backup codes.
+          </Text>
+        </Reveal>
+      ) : null}
+
       <Reveal anim={anims[3]}>
         {formError ? <Text style={styles.formErrorText}>⚠ {formError}</Text> : null}
-        <GradientButton label="Sign in" onPress={handleLogin} loading={loading} style={styles.ctaSpacing} />
+        <GradientButton
+          label={needsTwoFactor ? 'Verify and sign in' : 'Sign in'}
+          onPress={handleLogin}
+          loading={loading}
+          style={styles.ctaSpacing}
+        />
       </Reveal>
 
       <Reveal anim={anims[4]} style={styles.dividerRow}>
@@ -212,6 +249,13 @@ const styles = StyleSheet.create({
   forgotRow: { alignItems: 'flex-end', marginTop: -8, marginBottom: 4 },
   link: { color: colors.accentSolid, fontFamily: fonts.button, fontSize: 13 },
   ctaSpacing: { marginTop: 4, marginBottom: 24 },
+  twoFactorHint: {
+    fontSize: 12,
+    fontFamily: fonts.body,
+    color: colors.textTertiary,
+    marginTop: 8,
+    lineHeight: 17,
+  },
   formErrorText: { fontSize: 12, fontFamily: fonts.body, color: colors.danger, fontWeight: '600', marginBottom: 10 },
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },

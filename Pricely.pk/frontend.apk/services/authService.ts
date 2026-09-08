@@ -153,6 +153,13 @@ export const login = (params: {
   password: string;
   portal: Portal;
   deviceName?: string;
+
+  /**
+   * Only sent on the second attempt. An account with two-factor on answers
+   * the first one with code "two_factor_required"; the app then asks for the
+   * code and sends everything again.
+   */
+  twoFactorCode?: string;
 }) =>
   request<AuthResponse>('/api/auth/login', {
     method: 'POST',

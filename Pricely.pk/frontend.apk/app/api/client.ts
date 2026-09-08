@@ -275,6 +275,32 @@ export const api = {
 
   deleteAlert: (id: number) => request<void>(`/me/alerts/${id}`, { method: 'DELETE' }),
 
+  // ── Two-factor authentication ──
+  // Signing in with a code is not here — that stays on /api/auth/login, which
+  // takes it alongside the password.
+  twoFactorStatus: () =>
+    request<{ enabled: boolean; backupCodesRemaining: number }>('/me/2fa'),
+
+  /** Starts setup. Returns the otpauth:// URI to render as a QR code. */
+  twoFactorSetup: () =>
+    request<{ secret: string; otpAuthUri: string }>('/me/2fa/setup', { method: 'POST' }),
+
+  /** Confirms the first code, switches 2FA on, returns the one-time backup codes. */
+  twoFactorConfirm: (code: string) =>
+    request<{ backupCodes: string[] }>('/me/2fa/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+
+  twoFactorDisable: (code: string) =>
+    request<void>('/me/2fa/disable', { method: 'POST', body: JSON.stringify({ code }) }),
+
+  twoFactorNewBackupCodes: (code: string) =>
+    request<{ backupCodes: string[] }>('/me/2fa/backup-codes', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+
   // ── Favourites ──
   // The endpoints existed and the app never called them, so favourites lived
   // in memory and were gone when it closed. They took a product id, which

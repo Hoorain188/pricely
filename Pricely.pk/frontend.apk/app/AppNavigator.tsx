@@ -11,6 +11,7 @@ import AlertsScreen from './AlertsScreen';
 import ProfileScreen from './ProfileScreen';
 import ProductDetailScreen from './ProductDetailScreen';
 import SettingsScreen from './SettingsScreen';
+import TwoFactorScreen from './TwoFactorScreen';
 import HelpSupportScreen from './HelpSupportScreen';
 import SearchScreen from './SearchScreen';
 import AnimatedTabBar from '../components/AnimatedTabBar';
@@ -76,6 +77,7 @@ export default function AppNavigator() {
           <>
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen name="TwoFactor" component={TwoFactorScreen} />
             <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
             <Stack.Screen name="Search" component={SearchScreen} />
           </>

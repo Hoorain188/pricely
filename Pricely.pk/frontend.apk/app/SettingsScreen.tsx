@@ -114,6 +114,13 @@ export default function SettingsScreen() {
             <Text style={styles.rowLabel}>Change Password</Text>
             <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => navigation.navigate('TwoFactor')}
+          >
+            <Text style={styles.rowLabel}>Two-Factor Authentication</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+          </TouchableOpacity>
         </View>
 
         {/* Preferences Section */}

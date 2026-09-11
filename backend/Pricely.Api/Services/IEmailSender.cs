@@ -7,6 +7,15 @@ namespace Pricely.Api.Services;
 /// </summary>
 public interface IEmailSender
 {
+    /// <summary>
+    /// False when no mail provider is configured. Callers check this instead
+    /// of sending and catching the failure, because the right response differs
+    /// by flow: signup skips the code and creates the account directly, an
+    /// invite hands its code back to the admin, forgot-password says it is
+    /// unavailable, and alerts and summaries simply go by push alone.
+    /// </summary>
+    bool CanSend { get; }
+
     Task SendVerificationCodeAsync(string toEmail, string code, CancellationToken ct = default);
     Task SendPasswordResetCodeAsync(string toEmail, string code, CancellationToken ct = default);
 

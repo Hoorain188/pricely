@@ -28,12 +28,6 @@ services:
         sync: false
       - key: Jwt__SigningKey
         sync: false
-      # Program.cs refuses to start outside Development without these —
-      # password resets and team invites are emailed.
-      - key: Email__FromAddress
-        sync: false
-      - key: Email__SmtpPassword
-        sync: false
       # ScrapersController still enqueues a run over HTTP, from the days when
       # the scrapers were a second service. They now live in this same app, so
       # it points at itself; the fallback, localhost:5079, is nothing at all

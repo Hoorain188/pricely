@@ -20,8 +20,8 @@ public class AuthController : ControllerBase
     /// <summary>Creates the account and emails a 6-digit code. No login yet.</summary>
     [HttpPost("signup")]
     [EnableRateLimiting(RateLimitPolicies.EmailSending)]
-    public async Task<ActionResult<AuthStatusResponse>> Signup(SignupRequest req, CancellationToken ct)
-        => Ok(await _auth.SignupAsync(req, ct));
+    public async Task<ActionResult<object>> Signup(SignupRequest req, CancellationToken ct)
+        => Ok(await _auth.SignupAsync(req, ClientIp, ct));
 
     /// <summary>
     /// Confirms the signup code. Shoppers get tokens back and are logged in;

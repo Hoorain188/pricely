@@ -167,15 +167,9 @@ export default function SettingsScreen() {
         {/* Notifications Section */}
         <Text style={styles.sectionHeader}>Notifications</Text>
         <View style={styles.card}>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Email price alerts</Text>
-            <Switch
-              value={emailAlerts}
-              onValueChange={setEmailAlerts}
-              trackColor={{ false: '#767577', true: '#0E6B4F' }}
-              thumbColor={emailAlerts ? '#FFFFFF' : '#f4f3f4'}
-            />
-          </View>
+          {/* The email alerts switch is hidden while there is no mail provider:
+              it would save a preference nothing acts on. The server field is
+              kept, so it comes back by removing this comment's condition. */}
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Instant price drop notifications</Text>
             <Switch

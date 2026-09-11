@@ -95,7 +95,7 @@ public class PriceAlertChecker : IPriceAlertChecker
                     ct);
             }
 
-            if (wantsEmail && emails.TryGetValue(alert.UserId, out var address))
+            if (wantsEmail && _email.CanSend && emails.TryGetValue(alert.UserId, out var address))
             {
                 try
                 {

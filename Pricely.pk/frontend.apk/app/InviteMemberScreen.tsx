@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Share } from 'react-native';
 import { ArrowLeft, Mail } from 'lucide-react-native';
 import FloatingLabelInput from '../components/FloatingLabelInput';
 import GradientButton from '../components/GradientButton';
@@ -25,7 +25,7 @@ export default function InviteMemberScreen({ navigation }: InviteMemberScreenPro
   const [role, setRole] = useState<Role>('support');
   const [error, setError] = useState<string | undefined>();
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState<{ email: string; role: Role } | null>(null);
+  const [sent, setSent] = useState<{ email: string; role: Role; code?: string | null } | null>(null);
 
   const { logActivity } = useActivityStore();
   const { user } = useAuthStore();
@@ -40,9 +40,9 @@ export default function InviteMemberScreen({ navigation }: InviteMemberScreenPro
     setSending(true);
 
     try {
-      await api.inviteMember(trimmed, role);
+      const res = await api.inviteMember(trimmed, role);
       logActivity(`Invited ${trimmed} as ${role}`);
-      setSent({ email: trimmed, role });
+      setSent({ email: trimmed, role, code: res.inviteCode ?? null });
     } catch (err) {
       // The server rejects duplicates with a clear message ("That email
       // already has an account"), so pass it through instead of masking it.
@@ -66,11 +66,34 @@ export default function InviteMemberScreen({ navigation }: InviteMemberScreenPro
         </View>
       ) : sent ? (
         <View style={styles.sentWrap}>
-          <Text style={styles.title}>Invite sent</Text>
-          <Text style={styles.subtext}>
-            {sent.email} will get a link by email to set up their account as{' '}
-            {ROLE_OPTIONS.find((r) => r.key === sent.role)?.label}.
-          </Text>
+          <Text style={styles.title}>{sent.code ? 'Invite created' : 'Invite sent'}</Text>
+          {sent.code ? (
+            <>
+              {/* No email goes out, so this code is the invite. It is only
+                  shown here — the server keeps a hash, not the code. */}
+              <Text style={styles.subtext}>
+                Send this code to {sent.email}. They open the app, tap
+                "Have an invite code?" and enter it to join as{' '}
+                {ROLE_OPTIONS.find((r) => r.key === sent.role)?.label}. It works once and
+                expires in 7 days.
+              </Text>
+              <Text selectable style={styles.inviteCode}>{sent.code}</Text>
+              <GradientButton
+                label="Share code"
+                onPress={() =>
+                  Share.share({
+                    message: `You've been invited to Pricely. Open the app, tap "Have an invite code?" and enter:\n\n${sent.code}`,
+                  }).catch(() => {})
+                }
+                style={styles.ctaSpacing}
+              />
+            </>
+          ) : (
+            <Text style={styles.subtext}>
+              {sent.email} will get a link by email to set up their account as{' '}
+              {ROLE_OPTIONS.find((r) => r.key === sent.role)?.label}.
+            </Text>
+          )}
           <GradientButton label="Done" onPress={() => navigation.goBack()} style={styles.ctaSpacing} />
         </View>
       ) : (
@@ -121,6 +144,18 @@ export default function InviteMemberScreen({ navigation }: InviteMemberScreenPro
 }
 
 const styles = StyleSheet.create({
+  inviteCode: {
+    fontSize: 16,
+    fontFamily: fonts.mono,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    letterSpacing: 1,
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    marginTop: 16,
+  },
   root: { flex: 1, backgroundColor: colors.background, padding: 20 },
   backBtn: {
     width: 40,

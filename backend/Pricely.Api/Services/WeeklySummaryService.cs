@@ -60,7 +60,8 @@ public class WeeklySummaryService
                   u => u.Id, s => s.UserId, (u, s) => u.Id)
             .ToListAsync();
 
-        foreach (var address in emailWanted)
+        // No provider: the push half still goes out, the email half is skipped.
+        foreach (var address in _email.CanSend ? emailWanted : new List<string>())
         {
             try
             {

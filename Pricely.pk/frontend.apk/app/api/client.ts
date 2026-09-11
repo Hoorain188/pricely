@@ -376,7 +376,9 @@ export const api = {
   team: () => request<TeamResponse>('/admin/team'),
 
   inviteMember: (email: string, role: Role) =>
-    request<{ inviteId: number; email: string; role: string }>('/admin/team/invites', {
+    // inviteCode is present when the invite could not be emailed — always,
+    // while mail is off. The admin passes it on by hand.
+    request<{ inviteId: number; email: string; role: string; inviteCode?: string | null }>('/admin/team/invites', {
       method: 'POST',
       // The API expects the C# enum spelling: Admin / Support / ReadOnly.
       body: JSON.stringify({ email, role: toApiRole(role) }),

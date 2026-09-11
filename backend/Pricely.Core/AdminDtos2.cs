@@ -58,7 +58,14 @@ public record CustomersResponse(
 /// </summary>
 public record InviteRequest(string Email, string Role);
 
-public record InviteResponse(long InviteId, string Email, string Role, DateTimeOffset CreatedAt);
+/// <summary>
+/// InviteCode is set only when the invite could not be emailed — which, with
+/// no mail provider, is every time. The admin passes it on by hand, and the
+/// invitee enters it under "Have an invite code?". It was previously produced
+/// by TeamService and then dropped here, so the admin never saw it.
+/// </summary>
+public record InviteResponse(
+    long InviteId, string Email, string Role, DateTimeOffset CreatedAt, string? InviteCode = null);
 
 public record ChangeRoleRequest(string Role);
 

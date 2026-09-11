@@ -41,7 +41,7 @@ public class AuthService
 
     // ── Signup ───────────────────────────────────────────────────────────
 
-    public async Task<AuthStatusResponse> SignupAsync(SignupRequest req, CancellationToken ct)
+    public async Task<object> SignupAsync(SignupRequest req, string? ip, CancellationToken ct)
     {
         var email = Normalize(req.Email);
 
@@ -57,6 +57,17 @@ public class AuthService
         // The ADMIN tab only ever *requests* Admin. Support and Read-only are
         // assigned by an existing admin later; nobody can pick them at signup.
         var role = req.Portal == Portal.Admin ? UserRole.Admin : UserRole.User;
+
+        // No mail provider: there is no way to deliver a code, so waiting for
+        // one would strand every signup exactly as the old flow did. The
+        // account is created now instead. When a provider is added, CanSend
+        // turns true and signup goes back to verifying the address.
+        if (!_email.CanSend)
+        {
+            await _db.PendingSignups.Where(p => p.Email == email).ExecuteDeleteAsync(ct);
+            return await FinishSignupAsync(
+                email, req.Name.Trim(), BCrypt.Net.BCrypt.HashPassword(req.Password), role, null, ip, ct);
+        }
 
         // Held here, not in users, until the code comes back. An account that
         // is never confirmed then leaves nothing behind that can block the
@@ -106,34 +117,50 @@ public class AuthService
         // and the account is only created for a proven address.
         await ConsumeCodeAsync(email, req.Code, VerificationPurpose.Signup, ct);
 
+        var result = await FinishSignupAsync(
+            email, pending.Name, pending.PasswordHash, pending.Role, req.DeviceName, ip, ct);
+
+        _db.PendingSignups.Remove(pending);
+        await _db.SaveChangesAsync(ct);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Turns a proven signup into an account. Shared by the verified path and
+    /// the no-mail path, so the two cannot drift: both reuse a never-verified
+    /// row from the old flow rather than inserting a second one, both refuse
+    /// an address someone else has since confirmed, and both send back-office
+    /// signups to the approval queue instead of letting them in.
+    /// </summary>
+    private async Task<object> FinishSignupAsync(
+        string email, string name, string passwordHash, UserRole role,
+        string? deviceName, string? ip, CancellationToken ct)
+    {
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
 
         if (user is null)
         {
             user = new User
             {
-                Email = pending.Email,
+                Email = email,
                 IsActive = false        // shoppers are switched on just below
             };
             _db.Users.Add(user);
         }
         else if (user.EmailVerifiedAt is not null)
         {
-            // Registered by someone else between starting and confirming.
-            _db.PendingSignups.Remove(pending);
-            await _db.SaveChangesAsync(ct);
             throw new AuthException("email_taken", "An account with this email already exists — try signing in instead.");
         }
         // Otherwise it is a never-verified row from the old flow: reuse it, so
         // its id keeps working for whatever already references it.
 
-        user.Name = pending.Name;
-        user.PasswordHash = pending.PasswordHash;
-        user.Role = pending.Role;
+        user.Name = name;
+        user.PasswordHash = passwordHash;
+        user.Role = role;
         user.EmailVerifiedAt = DateTimeOffset.UtcNow;
         user.UpdatedAt = DateTimeOffset.UtcNow;
 
-        _db.PendingSignups.Remove(pending);
         await _db.SaveChangesAsync(ct);
 
         // Shoppers are in immediately. Back-office signups are not: they go to
@@ -143,7 +170,7 @@ public class AuthService
         {
             user.IsActive = true;
             await _db.SaveChangesAsync(ct);
-            return await IssueSessionAsync(user, req.DeviceName, ip, ct);
+            return await IssueSessionAsync(user, deviceName, ip, ct);
         }
 
         var alreadyQueued = await _db.TeamRequests.AnyAsync(
@@ -229,6 +256,12 @@ public class AuthService
 
     public async Task<AuthStatusResponse> ForgotPasswordAsync(ForgotPasswordRequest req, CancellationToken ct)
     {
+        if (!_email.CanSend)
+            throw new AuthException(
+                "email_unavailable",
+                "Resetting a password by email isn't available yet. Please contact support to regain access.",
+                StatusCodes.Status503ServiceUnavailable);
+
         var email = Normalize(req.Email);
         var exists = await _db.Users.AnyAsync(u => u.Email == email, ct);
 
@@ -258,6 +291,12 @@ public class AuthService
     /// </summary>
     public async Task<AuthStatusResponse> ResendCodeAsync(ResendCodeRequest req, CancellationToken ct)
     {
+        if (!_email.CanSend)
+            throw new AuthException(
+                "email_unavailable",
+                "Email codes aren't available yet.",
+                StatusCodes.Status503ServiceUnavailable);
+
         var email = Normalize(req.Email);
         var purpose = req.Purpose == CodePurpose.Signup
             ? VerificationPurpose.Signup

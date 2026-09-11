@@ -202,14 +202,21 @@ public class TeamService
         // it can be passed on by hand. They are the same person the email was
         // going to be visible to anyway.
         string? shareToken = null;
-        try
+        if (!_email.CanSend)
         {
-            await _email.SendTeamInviteAsync(email, rawToken, role.ToWire(), ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Invite email to {Email} failed; returning the token to the inviter", email);
             shareToken = rawToken;
+        }
+        else
+        {
+            try
+            {
+                await _email.SendTeamInviteAsync(email, rawToken, role.ToWire(), ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Invite email to {Email} failed; returning the token to the inviter", email);
+                shareToken = rawToken;
+            }
         }
 
         return new TeamRequestView(

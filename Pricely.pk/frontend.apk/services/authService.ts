@@ -130,7 +130,10 @@ export const signup = (params: {
   password: string;
   portal: Portal;
 }) =>
-  request<AuthStatusResponse>('/api/auth/signup', {
+  // With no mail provider the account is created on the spot and this comes
+  // back signed in (or pending approval for back-office). With one, it comes
+  // back "verification_sent". Callers check which — never assume.
+  request<AuthResponse | AuthStatusResponse>('/api/auth/signup', {
     method: 'POST',
     body: JSON.stringify(params),
   });

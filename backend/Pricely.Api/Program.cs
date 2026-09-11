@@ -91,7 +91,6 @@ builder.Services.AddHangfireServer();
 // ── Options ──────────────────────────────────────────────────────────────
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
-builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
 
 // ── Authentication ───────────────────────────────────────────────────────
 
@@ -269,35 +268,12 @@ builder.Services.AddScoped<TeamService>();
 builder.Services.AddScoped<MonitoredSyncService>();
 builder.Services.AddScoped<WeeklySummaryService>();
 
-// Real mail is the default. The console fallback is only allowed while
-// developing and only when Gmail genuinely isn't configured yet, so a
-// misconfigured deployment fails loudly instead of silently sending nothing.
-var email = builder.Configuration.GetSection(EmailOptions.SectionName).Get<EmailOptions>() ?? new EmailOptions();
-var smtpConfigured = !string.IsNullOrWhiteSpace(email.FromAddress)
-                     && !string.IsNullOrWhiteSpace(email.SmtpPassword);
-
-if (!string.IsNullOrWhiteSpace(email.ResendApiKey))
-{
-    // Preferred wherever it is configured. Resend goes over HTTPS, and hosts
-    // block outbound SMTP — which is why signup and invites failed on Render
-    // while working from a laptop.
-    builder.Services.AddScoped<IEmailSender, ResendEmailSender>();
-}
-else if (smtpConfigured)
-{
-    builder.Services.AddScoped<IEmailSender, GmailEmailSender>();
-}
-else if (builder.Environment.IsDevelopment())
-{
-    builder.Services.AddScoped<IEmailSender, LoggingEmailSender>();
-}
-else
-{
-    throw new InvalidOperationException(
-        "Configure email before deploying: set Email:ResendApiKey (recommended — SMTP is " +
-        "blocked on most hosts), or Email:FromAddress with Email:SmtpPassword. " +
-        "See backend/README.md.");
-}
+// Email is switched off. SMTP is blocked outbound on the host, and the only
+// configured sender was a personal Gmail, so nothing is sent: signup creates
+// the account directly, invites hand their code to the admin, alerts go by
+// push. To add a provider later, write an IEmailSender and register it here
+// in place of this line — nothing that sends mail needs to change.
+builder.Services.AddScoped<IEmailSender, DisabledEmailSender>();
 
 builder.Services
     .AddControllers()
@@ -390,22 +366,7 @@ app.UseExceptionHandler(errorApp =>
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-if (!string.IsNullOrWhiteSpace(email.ResendApiKey))
-{
-    app.Logger.LogInformation("Email goes out through Resend over HTTPS.");
-}
-else if (smtpConfigured)
-{
-    app.Logger.LogWarning(
-        "Email goes out over SMTP, which most hosts block outbound — expect sends to fail " +
-        "once deployed. Set Email:ResendApiKey to send over HTTPS instead.");
-}
-else
-{
-    app.Logger.LogWarning(
-        "Email is not configured — verification codes will be printed to this console " +
-        "instead of sent. Set Email:ResendApiKey to send real mail.");
-}
+app.Logger.LogInformation("Email is disabled: signups are created directly and invite codes go to the inviting admin.");
 
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();

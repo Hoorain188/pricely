@@ -32,7 +32,12 @@ function Reveal({ anim, children, style }: RevealProps) {
 interface SignupFormProps {
   role?: string;
   onSwitchToLogin: () => void;
-  onSignedUp: (email: string, name: string, password: string) => void;
+  onSignedUp: (
+    email: string,
+    name: string,
+    password: string,
+    result: authService.AuthResponse | authService.AuthStatusResponse,
+  ) => void | Promise<void>;
 }
 
 export interface SignupFormRef {
@@ -101,13 +106,13 @@ const SignupForm = forwardRef<SignupFormRef, SignupFormProps>(function SignupFor
     try {
       // Creates the account (inactive) and sends the emailed code. Nothing is
       // authenticated yet — that happens on the verify screen.
-      await authService.signup({
+      const result = await authService.signup({
         name: name.trim(),
         email: email.trim(),
         password,
         portal: role === 'admin' ? 'admin' : 'user',
       });
-      onSignedUp(email.trim(), name.trim(), password);
+      await onSignedUp(email.trim(), name.trim(), password, result);
     } catch (error) {
       // Duplicate emails surface here rather than during typing, because
       // only the server knows every account.

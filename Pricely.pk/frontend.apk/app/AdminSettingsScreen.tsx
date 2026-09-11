@@ -111,14 +111,9 @@ export default function AdminSettingsScreen({ navigation }: AdminSettingsScreenP
             disabled={!ready}
           />
         </View>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Weekly summary email</Text>
-          <Toggle
-            value={prefs.weeklySummaryEmail}
-            onValueChange={(v) => void handleToggle('weeklySummaryEmail', v)}
-            disabled={!ready}
-          />
-        </View>
+        {/* Weekly summary *email* is hidden while mail is off; the weekly
+            summary still goes out as a notification to anyone with
+            New reports on. */}
         <TouchableOpacity style={[styles.row, styles.rowBottom]} onPress={() => navigation.navigate('Reports')}>
           <Text style={styles.rowLabel}>View reports</Text>
           <Text style={styles.rowValue}>Weekly · monthly · yearly ›</Text>

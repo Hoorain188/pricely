@@ -135,9 +135,22 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               ref={signupRef}
               role={role}
               onSwitchToLogin={() => goTo('login')}
-              onSignedUp={(email) => {
-                // SignupForm has already created the account on the server and
-                // triggered the emailed code; nothing is held here.
+              onSignedUp={async (email, _name, _password, result) => {
+                // Three possible answers, decided by the server. With no mail
+                // provider a shopper comes back signed in and a back-office
+                // signup comes back pending approval; only with one does it
+                // ask for a code. Sending everyone to the code screen
+                // regardless would strand them there, waiting for an email
+                // that is never sent.
+                if (authService.isAuthResponse(result)) {
+                  await setAuth(result.user, result.accessToken, result.refreshToken);
+                  onAuthenticated?.();
+                  return;
+                }
+                if (result.status === 'pending_approval') {
+                  goTo('pendingApproval');
+                  return;
+                }
                 setVerifyEmail(email);
                 setVerifyFlow('signup');
                 goTo('verify');

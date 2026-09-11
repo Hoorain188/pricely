@@ -106,7 +106,7 @@ public class TeamController : ControllerBase
             throw new AuthException("validation_error", $"'{req.Role}' is not a valid team role.");
 
         var created = await _team.InviteAsync(CurrentUserId, new InviteMemberInput(req.Email, role), ct);
-        return Ok(new InviteResponse(created.Id, created.Email, created.RequestedRole, created.CreatedAt));
+        return Ok(new InviteResponse(created.Id, created.Email, created.RequestedRole, created.CreatedAt, created.ShareToken));
     }
 
     /// <summary>Cancels a pending invite; the emailed link stops working immediately.</summary>

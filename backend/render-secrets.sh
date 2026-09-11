@@ -17,8 +17,6 @@ get() { echo "$secrets" | sed -n "s/^$1 = //p"; }
 
 CONN=$(get "ConnectionStrings:Default")
 JWT=$(get "Jwt:SigningKey")
-FROM=$(get "Email:FromAddress")
-SMTP=$(get "Email:SmtpPassword")
 
 if [ -z "$CONN" ]; then
   echo "No connection string found in user-secrets. Are you in the right repo?" >&2
@@ -41,12 +39,6 @@ $CONN
 
 Jwt__SigningKey
 $JWT
-
-Email__FromAddress
-$FROM
-
-Email__SmtpPassword
-$SMTP
 
 ──────────────────────────────────────────────────────────────
 The first two hold the same value under different names: the

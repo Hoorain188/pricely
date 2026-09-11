@@ -122,6 +122,7 @@ export interface ApiListing {
   price: number;
   currency: string;
   preSelected: boolean;
+  imageUrl: string | null;
 }
 
 export interface ApiDuplicateGroup {
@@ -196,6 +197,65 @@ export interface NotificationPrefs {
   newReports: boolean;
   syncFailures: boolean;
   weeklySummaryEmail: boolean;
+}
+
+export interface AdminProduct {
+  id: number;
+  name: string;
+  category: string | null;
+  listingCount: number;
+  storeCount: number;
+  lowestPrice: number | null;
+  highestPrice: number | null;
+  imageUrl: string | null;
+}
+
+export interface AdminProductsResponse {
+  items: AdminProduct[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+/** A shopper watching one listing. Alerts hang off listings, not products,
+ *  because almost nothing in the catalogue has been merged into a product. */
+/** A favourite hangs off a listing, like an alert — almost nothing has been
+ *  merged into a product, so a product id would rule most of the catalogue out. */
+export interface ShopperFavorite {
+  id: number;
+  storeListingId: number | null;
+  productId: number | null;
+  createdAt: string;
+  title: string | null;
+  price: number | null;
+  imageUrl: string | null;
+  storeName: string | null;
+  productUrl: string | null;
+}
+
+export interface ShopperAlert {
+  id: number;
+  storeListingId: number | null;
+  productId: number | null;
+  targetPrice: number;
+  isTriggered: boolean;
+  triggeredAt: string | null;
+  createdAt: string;
+  title: string | null;
+  currentPrice: number | null;
+  imageUrl: string | null;
+  productUrl: string | null;
+}
+
+export interface AdminAlert {
+  id: number;
+  title: string;
+  storeName: string | null;
+  imageUrl: string | null;
+  currentPrice: number | null;
+  targetPrice: number;
+  isTriggered: boolean;
+  createdAt: string;
 }
 
 export interface ApiActivityEntry {
@@ -302,31 +362,19 @@ export const api = {
     }),
 
   // ── Favourites ──
-  // The endpoints existed and the app never called them, so favourites lived
-  // in memory and were gone when it closed. They took a product id, which
-  // almost nothing browsable has; listings work now.
-  listFavorites: () =>
-    request<{
-      items: {
-        id: number;
-        productId: number | null;
-        storeListingId: number | null;
-        title: string;
-        storeName: string | null;
-        price: number | null;
-        imageUrl: string | null;
-        createdAt: string;
-      }[];
-    }>('/favorites'),
+  // Kept on the server and keyed by listing — almost nothing browsable is
+  // matched into a product, so a product id would rule most of it out.
+  favorites: () => request<{ items: ShopperFavorite[] }>('/favorites'),
 
   addFavorite: (storeListingId: number) =>
-    request<void>('/favorites', {
+    request<{ favorited: boolean; storeListingId: number }>('/favorites', {
       method: 'POST',
       body: JSON.stringify({ storeListingId }),
     }),
 
+  // The server reads this id as a listing id by default.
   removeFavorite: (storeListingId: number) =>
-    request<void>(`/favorites/${storeListingId}?listing=true`, { method: 'DELETE' }),
+    request<{ favorited: boolean }>(`/favorites/${storeListingId}`, { method: 'DELETE' }),
 
   // ── The signed-in shopper's notification preferences ──
   // Distinct from /admin/me/notifications, which is scraper and report
@@ -341,6 +389,9 @@ export const api = {
       body: JSON.stringify({ priceAlertsPush, priceAlertsEmail }),
     }),
 
+  // ── Back office: every shopper's alerts, read-only ──
+  adminAlerts: () => request<{ items: AdminAlert[] }>('/admin/alerts'),
+
   logSearch: (queryText: string) =>
     request<void>('/searches', { method: 'POST', body: JSON.stringify({ queryText }) }),
   logStoreClick: (url: string) =>
@@ -349,6 +400,12 @@ export const api = {
 
   rerunScraper: (storeId: number) =>
     request<{ store: string }>(`/admin/scrapers/${storeId}/run`, { method: 'POST' }),
+
+  products: (search?: string, page = 1, pageSize = 50) =>
+    request<AdminProductsResponse>(
+      `/admin/products?page=${page}&pageSize=${pageSize}` +
+        (search ? `&q=${encodeURIComponent(search)}` : ''),
+    ),
 
   duplicates: (status: 'pending' | 'merged', search?: string) =>
     request<DuplicatesResponse>(

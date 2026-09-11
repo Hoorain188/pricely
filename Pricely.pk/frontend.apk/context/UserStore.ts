@@ -27,9 +27,12 @@ export interface FavoriteItem {
   id: string;
   name: string;
   price: string;
+  imageUrl?: string;
   priceDrop?: string;
   statusText?: string;
   categoryKey?: string;
+  handle?: string;
+  store?: string;
 }
 
 export interface PriceAlert {
@@ -39,7 +42,9 @@ export interface PriceAlert {
   currentPrice: string;
   remainingPrice: string;
   active: boolean;
+  imageUrl?: string;
   categoryKey?: string;
+  store?: string;
 }
 
 interface UserStoreState {
@@ -47,9 +52,9 @@ interface UserStoreState {
   alerts: PriceAlert[];
   
   // Actions
-  toggleFavorite: (product: { name: string; price: string; categoryKey?: string }) => void;
+  toggleFavorite: (product: { name: string; price: string; imageUrl?: string; categoryKey?: string; handle?: string; store?: string }) => void;
   isFavorited: (productName: string) => boolean;
-  addAlert: (product: { name: string; targetPrice: string; currentPrice: string }) => void;
+  addAlert: (product: { name: string; targetPrice: string; currentPrice: string; imageUrl?: string; categoryKey?: string; store?: string }) => void;
   toggleAlertActive: (id: string) => void;
   removeAlert: (id: string) => void;
 
@@ -102,9 +107,12 @@ export const useUserStore = create<UserStoreState>((set, get) => ({
         id: Math.random().toString(),
         name: product.name,
         price: product.price,
+        imageUrl: product.imageUrl,
         priceDrop: `▼ Rs ${dropVal.toLocaleString()} since saved`,
-        statusText: 'Watching on 3 stores',
+        statusText: `Watching on ${product.store || '3 stores'}`,
         categoryKey: product.categoryKey,
+        handle: product.handle,
+        store: product.store,
       };
       set({ favorites: [...favorites, newFav] });
     }
@@ -127,6 +135,9 @@ export const useUserStore = create<UserStoreState>((set, get) => ({
       currentPrice: product.currentPrice,
       remainingPrice: diff > 0 ? `Rs ${diff.toLocaleString()} to go` : 'Target reached!',
       active: true,
+      imageUrl: product.imageUrl,
+      categoryKey: product.categoryKey,
+      store: product.store,
     };
     set({ alerts: [...alerts, newAlert] });
   },
@@ -170,12 +181,14 @@ export const useUserStore = create<UserStoreState>((set, get) => ({
 
   loadFavorites: async () => {
     try {
-      const { items } = await api.listFavorites();
+      const { items } = await api.favorites();
       set({
         favorites: items.map((f) => ({
           id: String(f.storeListingId ?? f.productId ?? f.id),
-          name: f.title,
+          name: f.title ?? 'Product no longer listed',
           price: f.price != null ? rupees(f.price) : '',
+          imageUrl: f.imageUrl ?? undefined,
+          store: f.storeName ?? undefined,
         })),
       });
     } catch {

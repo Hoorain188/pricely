@@ -338,6 +338,11 @@ builder.Services.AddOutputCache(options =>
         .SetVaryByQuery("store"));
 });
 
+// Railway/cloud PORT support
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(port))
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
 var app = builder.Build();
 
 // ── Pipeline ─────────────────────────────────────────────────────────────
@@ -414,6 +419,29 @@ catch (Exception ex)
 }
 
 // ── Hangfire dashboard (secured with Basic Auth) ──────────────────────────
+// A sync writes its scraper_runs row when it starts and closes it when it
+// finishes. Stopping the API in between leaves the row open forever: the
+// dashboard reads it as "still running" and the Re-run button stays disabled.
+// Anything still open at startup cannot be running, because nothing was.
+try
+{
+    using var startupScope = app.Services.CreateScope();
+    var startupDb = startupScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var closed = await startupDb.Database.ExecuteSqlRawAsync(@"
+        UPDATE scraper_runs
+        SET status = 'fail'::scraper_run_status,
+            error_message = COALESCE(error_message, 'Interrupted — the API restarted mid-run'),
+            finished_at = NOW()
+        WHERE finished_at IS NULL;");
+
+    if (closed > 0)
+        app.Logger.LogInformation("Closing stale scraper runs: {Count} left open by a previous shutdown.", closed);
+}
+catch (Exception ex)
+{
+    app.Logger.LogWarning("Could not close stale scraper runs: {Msg}", ex.Message);
+}
+
 app.UseHangfireDashboard("/hangfire", new DashboardOptions
 {
     Authorization = new[] { new HangfireAuthFilter() }
@@ -426,15 +454,21 @@ try
     RecurringJob.RemoveIfExists("megapk-sync");
     RecurringJob.RemoveIfExists("daraz-sync");
 
-    // Deduplication har roz raat 2 baje khud chale (sab syncs ke baad)
-    RecurringJob.AddOrUpdate<DeduplicationService>(
-        "deduplication", s => s.RunDeduplicationAsync(), "0 2 * * *");
+    // Recurring jobs run in production only. Every copy of this API shares one
+    // database, so a laptop registering them too makes each copy fight for the
+    // same Hangfire lock at startup — the "Failed to acquire lock" noise.
+    if (app.Environment.IsProduction())
+    {
+        // Deduplication har roz raat 2 baje khud chale (sab syncs ke baad)
+        RecurringJob.AddOrUpdate<DeduplicationService>(
+            "deduplication", s => s.RunDeduplicationAsync(), "0 2 * * *");
 
-    // The weekly back-office digest, Monday 08:00 UTC. This is what makes the
-    // weekly_summary_email and new_reports toggles mean anything — both were
-    // saved by the settings screen and read by nothing.
-    RecurringJob.AddOrUpdate<WeeklySummaryService>(
-        "weekly-summary", s => s.SendWeeklySummaryAsync(), "0 8 * * 1");
+        // The weekly back-office digest, Monday 08:00 UTC. This is what makes
+        // the new_reports toggle mean anything — it was saved by the settings
+        // screen and read by nothing.
+        RecurringJob.AddOrUpdate<WeeklySummaryService>(
+            "weekly-summary", s => s.SendWeeklySummaryAsync(), "0 8 * * 1");
+    }
 }
 catch (Exception ex)
 {
@@ -496,7 +530,8 @@ app.MapGet("/api/browse", async (
     var sql = $@"
         SELECT sl.id, sl.raw_title, s.name AS store, sl.price,
                sl.product_url, sl.image_url,
-               CASE WHEN c.store_listing_id IS NOT NULL THEN true ELSE false END AS has_comparison
+               CASE WHEN c.store_listing_id IS NOT NULL THEN true ELSE false END AS has_comparison,
+               CASE WHEN d.store_listing_id IS NOT NULL THEN true ELSE false END AS has_price_drop
         FROM store_listings sl
         JOIN stores s ON s.id = sl.store_id
         LEFT JOIN (
@@ -510,8 +545,17 @@ app.MapGet("/api/browse", async (
                 HAVING COUNT(DISTINCT sl2.store_id) >= 2
             )
         ) c ON c.store_listing_id = sl.id
+        LEFT JOIN (
+            -- Price DROP: purana daam abhi ke daam se ZYADA tha
+            SELECT DISTINCT ph.store_listing_id
+            FROM price_history ph
+            JOIN store_listings sl3 ON sl3.id = ph.store_listing_id
+            WHERE ph.price > sl3.price
+              AND ph.recorded_at >= NOW() - INTERVAL '30 days'
+        ) d ON d.store_listing_id = sl.id
         WHERE sl.category = {{0}} {storeFilter}
         ORDER BY has_comparison DESC,
+                 has_price_drop DESC,
                  md5(sl.id::text || '{rotationSeed}')
         LIMIT {size} OFFSET {offset};";
 
@@ -545,7 +589,8 @@ app.MapGet("/api/browse", async (
             currency = "PKR",
             url = r.product_url,
             imageUrl = r.image_url,
-            hasComparison = r.has_comparison
+            hasComparison = r.has_comparison,
+            hasPriceDrop = r.has_price_drop
         })
     });
 }).RequireRateLimiting("api").CacheOutput("browse");
@@ -1015,12 +1060,57 @@ app.MapGet("/api/megapk-product", async (string url, IHttpClientFactory httpFact
         var titleM = Regex.Match(html, @"<h2 class=""product-title""\s*>(.*?)</h2>", RegexOptions.Singleline);
         var title = titleM.Success ? CleanText(titleM.Groups[1].Value) : "";
 
-        var imgM = Regex.Match(html, @"<img[^>]*id=""main-prod-img""[^>]*>", RegexOptions.Singleline);
-        var mainImage = "";
-        if (imgM.Success)
+        // --- Images: sirf ISI product ki (URL se product id nikaal kar) ---
+        var images = new List<string>();
+
+        // URL se product id: .../watches_products/25318/GOOGLE-PIXEL-WATCH-2.html
+        var idMatch = Regex.Match(url, @"/(\d+)/");
+        var productId = idMatch.Success ? idMatch.Groups[1].Value : "";
+
+        // 1) Main image (id ke saath)
+        if (!string.IsNullOrEmpty(productId))
         {
-            var srcM = Regex.Match(imgM.Value, @"src=""([^""]+)""");
-            if (srcM.Success) mainImage = srcM.Groups[1].Value;
+            var mainMatches = Regex.Matches(html,
+                $@"(?:src|data-src)=[""'](?:https://www\.mega\.pk)?/?(items_images/[^""']*_{productId}\.(?:jpg|jpeg|png|webp))[""']",
+                RegexOptions.IgnoreCase);
+
+            foreach (Match m in mainMatches)
+            {
+                var full = "https://www.mega.pk/" + m.Groups[1].Value;
+                if (!images.Contains(full)) images.Add(full);
+            }
+        }
+
+        // 2) Thumbnails — gallery div ke andar se (agar hai)
+        var galleryMatch = Regex.Match(html,
+            @"<div[^>]*(?:id|class)=[""'][^""']*(?:thumb|gallery|prod-img)[^""']*[""'][^>]*>(.*?)</div>",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+        if (galleryMatch.Success)
+        {
+            var thumbMatches = Regex.Matches(galleryMatch.Groups[1].Value,
+                @"(?:src|data-src)=[""'](?:https://www\.mega\.pk)?/?(items_images/[^""']+\.(?:jpg|jpeg|png|webp))[""']",
+                RegexOptions.IgnoreCase);
+
+            foreach (Match m in thumbMatches)
+            {
+                var full = "https://www.mega.pk/" + m.Groups[1].Value;
+                if (!images.Contains(full)) images.Add(full);
+                if (images.Count >= 6) break;
+            }
+        }
+
+        // 3) Kuch na mile to main-prod-img se (purana tareeqa)
+        if (images.Count == 0)
+        {
+            var mainImg = Regex.Match(html,
+                @"id=[""']main-prod-img[""'][^>]*src=[""']([^""']+)[""']",
+                RegexOptions.IgnoreCase);
+            if (mainImg.Success)
+            {
+                var src = mainImg.Groups[1].Value;
+                images.Add(src.StartsWith("http") ? src : "https://www.mega.pk/" + src.TrimStart('/'));
+            }
         }
 
         decimal price = 0;
@@ -1057,7 +1147,7 @@ app.MapGet("/api/megapk-product", async (string url, IHttpClientFactory httpFact
             Store = "Mega.pk",
             Price = price.ToString(),
             Brand = brand,
-            Images = new List<string> { mainImage },
+            Images = images,
             Specs = specs,
             Url = cleanUrl
         });
@@ -1093,16 +1183,27 @@ app.MapGet("/api/daraz-product", async (string url, IHttpClientFactory httpFacto
     {
         var html = await http.GetStringAsync(url);
 
-        // --- Images: seo-gallery se saari image URLs nikaalo ---
+        // --- Images: har mumkin Daraz CDN se ---
         var images = new List<string>();
         var imgMatches = Regex.Matches(html,
-            @"<img[^>]*src=""(https://img\.drz\.lazcdn\.com/static/[^""]+\.webp)""",
+            @"https://(?:img\.drz\.lazcdn\.com|static-01\.daraz\.pk|pk-live-\d+\.slatic\.net)/[^""'\s\\]+\.(?:jpg|jpeg|png|webp)",
             RegexOptions.IgnoreCase);
+
+        var seenIds = new HashSet<string>();
         foreach (Match m in imgMatches)
         {
-            var imgUrl = m.Groups[1].Value;
-            if (!images.Contains(imgUrl))   // duplicate na aaye (gallery + hidden dono mein hain)
+            var imgUrl = m.Value;
+            if (imgUrl.Contains("_60x60") || imgUrl.Contains("_80x80") ||
+                imgUrl.Contains("_100x100") || imgUrl.Contains("_120x120")) continue;
+
+            // filename ka hash nikaalo (duplicate pakadne ke liye)
+            var fileMatch = Regex.Match(imgUrl, @"/([a-f0-9]{32})\.");
+            var fileId = fileMatch.Success ? fileMatch.Groups[1].Value : imgUrl;
+
+            if (seenIds.Add(fileId))
                 images.Add(imgUrl);
+
+            if (images.Count >= 6) break;
         }
 
         // --- Basic info: pdpTrackingData JSON se ---
@@ -1139,16 +1240,67 @@ app.MapGet("/api/daraz-product", async (string url, IHttpClientFactory httpFacto
             if (t.Success) title = t.Groups[1].Value;
         }
 
+        // --- Description / Highlights extraction ---
+        string description = "";
+
+        // 1) Highlights div / list in Daraz HTML
+        var hlMatch = Regex.Match(html, @"<div[^>]*class=""[^""]*pdp-product-highlights[^""]*""[^>]*>(.*?)</div>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        if (!hlMatch.Success)
+        {
+            hlMatch = Regex.Match(html, @"<ul[^>]*class=""[^""]*pdp-mod-specification[^""]*""[^>]*>(.*?)</ul>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        }
+
+        if (hlMatch.Success)
+        {
+            var rawHl = hlMatch.Groups[1].Value;
+            var liMatches = Regex.Matches(rawHl, @"<li[^>]*>(.*?)</li>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            if (liMatches.Count > 0)
+            {
+                var items = liMatches.Select(m => "• " + CleanText(m.Groups[1].Value)).Where(s => s.Length > 3);
+                description = string.Join("\n", items);
+            }
+            else
+            {
+                description = CleanText(rawHl);
+            }
+        }
+
+        // 2) JSON "highlights" array if HTML block not matched
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            var jsonHlMatch = Regex.Match(html, @"""highlights""\s*:\s*\[(.*?)\]", RegexOptions.Singleline);
+            if (jsonHlMatch.Success)
+            {
+                var itemsMatch = Regex.Matches(jsonHlMatch.Groups[1].Value, @"""([^""]+)""");
+                if (itemsMatch.Count > 0)
+                {
+                    var items = itemsMatch.Select(m => "• " + CleanText(m.Groups[1].Value)).Where(s => s.Length > 3);
+                    description = string.Join("\n", items);
+                }
+            }
+        }
+
+        // 3) Meta description fallback
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            var metaDesc = Regex.Match(html, @"<meta\s+(?:name|property)=[""'](?:og:)?description[""']\s+content=[""']([^""']+)[""']", RegexOptions.IgnoreCase);
+            if (metaDesc.Success)
+            {
+                description = CleanText(metaDesc.Groups[1].Value);
+            }
+        }
+
         return Results.Ok(new
         {
-            Title    = title,
-            Store    = "Daraz",
-            Price    = price,
-            Brand    = brand,
-            Category = category,
-            Images   = images,
+            Title       = title,
+            Store       = "Daraz",
+            Price       = price,
+            Brand       = brand,
+            Category    = category,
+            Description = description,
+            Images      = images,
             ViewOnStoreUrl = url,
-            Note = "Poori tafseel aur reviews Daraz par dekhein"
+            Note = "View full product details & customer reviews on Daraz.pk"
         });
     }
     catch (Exception ex)
@@ -1156,6 +1308,8 @@ app.MapGet("/api/daraz-product", async (string url, IHttpClientFactory httpFacto
         return Results.Problem($"Daraz detail mein masla: {ex.Message}");
     }
 }).RequireRateLimiting("search");
+
+
 
 
 // ── DB CONNECTION TEST ───────────────────────────────────────────────────
@@ -1441,7 +1595,8 @@ record GroupRow(long group_id, string raw_title, string store, decimal price,
 record CompareRow(string store, decimal price, string? product_url, string? raw_title);
 
 record BrowseRow(long id, string raw_title, string store, decimal price,
-                 string? product_url, string? image_url, bool has_comparison);
+                 string? product_url, string? image_url,
+                 bool has_comparison, bool has_price_drop);
 
 record HistoryRow(decimal price, DateTime recorded_at);
 

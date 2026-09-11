@@ -21,7 +21,7 @@ export default function LottieToggleIcon({
     size = 24,
     colorFilters,
 }: LottieToggleIconProps) {
-    const lottieRef = useRef<LottieView>(null);
+    const lottieRef = useRef<any>(null);
 
     useEffect(() => {
         if (active) {

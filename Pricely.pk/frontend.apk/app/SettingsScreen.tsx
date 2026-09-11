@@ -10,6 +10,7 @@ import CustomAlertDialog from '../components/CustomAlertDialog';
 import Sidebar from '../components/Sidebar';
 import LottieHamburger from '../components/LottieHamburger';
 import { api } from './api/client';
+import { getCategoryKeyFromLabel } from '../services/catalogService';
 
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
@@ -223,8 +224,9 @@ export default function SettingsScreen() {
           else if (dest === 'Profile' || dest === 'Account') navigation.navigate('Account');
           else if (dest === 'Settings') navigation.navigate('Settings');
           else if (dest === 'Help & Support' || dest === 'HelpSupport' || dest === 'Help') navigation.navigate('HelpSupport');
-          else if (['Electronics', 'Fashion', 'Home & Living', 'Beauty', 'Appliances', 'Mobiles', 'Categories'].includes(dest)) {
-            navigation.navigate('Category', { categoryKey: 'mobiles_tablets' });
+          else {
+            const catKey = getCategoryKeyFromLabel(dest);
+            navigation.navigate('Category', { categoryKey: catKey });
           }
         }}
       />

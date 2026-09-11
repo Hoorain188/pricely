@@ -6,6 +6,7 @@ import {
 import { Search } from 'lucide-react-native';
 import SegmentedControl from '../components/SegmentedControl';
 import RolePill from '../components/RolePill';
+import Avatar from '../components/Avatar';
 import { colors, fonts, radii } from '../theme/colors';
 import {
   api, customersExportUrl, ApiError,
@@ -164,6 +165,7 @@ export default function AdminUsersScreen() {
             <>
               {customers.map((c) => (
                 <View key={c.id} style={styles.row}>
+                  <Avatar name={c.name} email={c.email} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowName}>{c.name}</Text>
                     <Text style={styles.rowMeta}>
@@ -199,6 +201,7 @@ export default function AdminUsersScreen() {
           ) : (
             team.map((m) => (
               <View key={m.id} style={styles.row}>
+                <Avatar name={m.name} email={m.email} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowName}>{m.name}</Text>
                   <Text style={styles.rowMeta}>
@@ -223,7 +226,9 @@ export default function AdminUsersScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingBottom: 40 },
+  // Titles sat under the status bar. Android reports no safe-area inset here,
+  // so the clearance is explicit rather than left to SafeAreaView.
+  content: { padding: 20, paddingTop: 52, paddingBottom: 40 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, backgroundColor: colors.background },
   errorTitle: { fontSize: 15, fontFamily: fonts.headline, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
   errorBody: { fontSize: 12.5, fontFamily: fonts.body, color: colors.textSecondary, textAlign: 'center', marginBottom: 16 },
@@ -250,6 +255,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 12.5, fontFamily: fonts.body, color: colors.textPrimary, paddingVertical: 10 },
   emptyText: { fontSize: 12.5, fontFamily: fonts.body, color: colors.textTertiary, textAlign: 'center', paddingVertical: 20 },
   row: {
+    gap: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',

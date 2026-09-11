@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput, Image, BackHandler } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { colors, fonts, radii, shadows, gradients } from '../theme/colors';
@@ -10,13 +11,15 @@ import LottieHamburger from '../components/LottieHamburger';
 import LottieBackButton from '../components/Lottiebackbutton';
 import { useUserStore } from '../context/UserStore';
 import CustomAlertDialog from '../components/CustomAlertDialog';
+import { getCategoryKeyFromLabel } from '../services/catalogService';
 
 const AVATAR_PRESETS = [
-  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=150&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=150&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1580489944761-15a19d654956?q=80&w=150&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=150&auto=format&fit=crop',
-  'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?q=80&w=150&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=300&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1634193295627-1cdddf751ebf?w=300&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=300&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1563089145-599997674d42?w=300&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=300&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=300&auto=format&fit=crop',
 ];
 
 export default function ProfileScreen() {
@@ -89,6 +92,31 @@ export default function ProfileScreen() {
       setEditModalVisible(true);
     }
   }, [route.params]);
+
+  const handlePickImage = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        setErrorMessage('Permission to access media library is required to choose a profile photo.');
+        setErrorVisible(true);
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setSelectedAvatar(result.assets[0].uri);
+      }
+    } catch (err: any) {
+      setErrorMessage('Could not open image picker');
+      setErrorVisible(true);
+    }
+  };
 
   const totalSavedVal = [...favorites, ...alerts].reduce((acc, item) => {
     const priceStr = 'price' in item ? item.price : item.currentPrice;
@@ -252,6 +280,24 @@ export default function ProfileScreen() {
               <Text style={styles.inputLabel}>Choose Profile Picture</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
                 <TouchableOpacity
+                  style={[
+                    styles.galleryPickBtn,
+                    Boolean(selectedAvatar && !AVATAR_PRESETS.includes(selectedAvatar)) && styles.presetItemActive
+                  ]}
+                  activeOpacity={0.8}
+                  onPress={handlePickImage}
+                >
+                  {selectedAvatar && !AVATAR_PRESETS.includes(selectedAvatar) ? (
+                    <Image source={{ uri: selectedAvatar }} style={styles.presetImage} />
+                  ) : (
+                    <View style={styles.galleryIconWrap}>
+                      <Text style={{ fontSize: 18 }}>🖼️</Text>
+                      <Text style={styles.galleryText}>Gallery</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   style={[styles.presetItem, !selectedAvatar && styles.presetItemActive]}
                   onPress={() => setSelectedAvatar('')}
                 >
@@ -375,8 +421,9 @@ export default function ProfileScreen() {
           else if (dest === 'Profile' || dest === 'Account') navigation.navigate('Account');
           else if (dest === 'Settings') navigation.navigate('Settings');
           else if (dest === 'Help & Support' || dest === 'HelpSupport' || dest === 'Help') navigation.navigate('HelpSupport');
-          else if (['Electronics', 'Fashion', 'Home & Living', 'Beauty', 'Appliances', 'Mobiles', 'Categories'].includes(dest)) {
-            navigation.navigate('Category', { categoryKey: 'mobiles_tablets' });
+          else {
+            const catKey = getCategoryKeyFromLabel(dest);
+            navigation.navigate('Category', { categoryKey: catKey });
           }
         }}
       />
@@ -634,6 +681,28 @@ const styles = StyleSheet.create({
   presetScroll: {
     flexDirection: 'row',
     marginBottom: 16,
+  },
+  galleryPickBtn: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    marginRight: 10,
+    borderWidth: 2,
+    borderColor: '#0E6B4F',
+    backgroundColor: '#EAF4EF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  galleryIconWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  galleryText: {
+    fontSize: 9,
+    fontFamily: fonts.button,
+    color: '#0E6B4F',
+    marginTop: 1,
   },
   presetItem: {
     width: 60,

@@ -220,6 +220,13 @@ public class PriceAlert
     /// </summary>
     public long? StoreListingId { get; set; }
 
+    /// <summary>
+    /// Price when the alert was last looked at. The column exists in the live
+    /// database though no migration file records it; the admin alerts list
+    /// falls back to it when a listing has gone, so it has to stay mapped.
+    /// </summary>
+    public decimal? LastSeenPrice { get; set; }
+
     public decimal TargetPrice { get; set; }
 
     /// <summary>

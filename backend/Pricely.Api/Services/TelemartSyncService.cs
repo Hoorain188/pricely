@@ -92,10 +92,16 @@ public class TelemartSyncService : IStoreConnector
                             pageUrls.Add($"https://www.telemart.pk/products/{hv}");
                     }
 
-                var existingByUrl = await RetryAsync(() =>
+                var existingRows = await RetryAsync(() =>
                     db.StoreListings
                       .Where(l => l.StoreId == telemart.Id && pageUrls.Contains(l.ProductUrl))
-                      .ToDictionaryAsync(l => l.ProductUrl!));
+                      .ToListAsync());
+
+                // A store can list the same URL twice; ToDictionary throws on the
+                // duplicate and takes the whole sync down with it.
+                var existingByUrl = existingRows
+                    .GroupBy(l => l.ProductUrl!)
+                    .ToDictionary(g => g.Key, g => g.First());
 
                 foreach (var p in products)
                 {

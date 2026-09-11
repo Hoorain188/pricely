@@ -53,10 +53,11 @@ public class UserActivityController : ControllerBase
                 f.ProductId,
                 f.StoreListingId,
                 f.CreatedAt,
-                Title = f.StoreListing != null ? f.StoreListing.RawTitle : f.Product!.Name,
-                StoreName = f.StoreListing != null ? f.StoreListing.Store.Name : null,
-                Price = f.StoreListing != null ? f.StoreListing.Price : (decimal?)null,
-                ImageUrl = f.StoreListing != null ? f.StoreListing.ImageUrl : f.Product!.ImageUrl
+                Title      = f.StoreListing != null ? f.StoreListing.RawTitle : f.Product!.Name,
+                StoreName  = f.StoreListing != null ? f.StoreListing.Store.Name : null,
+                Price      = f.StoreListing != null ? f.StoreListing.Price : (decimal?)null,
+                ImageUrl   = f.StoreListing != null ? f.StoreListing.ImageUrl : f.Product!.ImageUrl,
+                ProductUrl = f.StoreListing != null ? f.StoreListing.ProductUrl : null
             })
             .ToListAsync(ct);
 
@@ -105,14 +106,20 @@ public class UserActivityController : ControllerBase
     }
 
     /// <summary>
-    /// Takes a product id for backwards compatibility, or a listing id via
-    /// ?listing=true — the app deals in listings.
+    /// The id is a listing id — that is what the app holds. Pass ?product=true
+    /// to remove a whole-product favourite instead. It used to be the other way
+    /// round, behind ?listing=true, and any caller that left the flag off
+    /// removed nothing and still got a 200.
+    ///
+    /// Price alerts are not in this controller. AlertsController owns them,
+    /// signed in and scoped to the caller; the anonymous versions that stood
+    /// here filed every alert under user 1, which does not exist.
     /// </summary>
     [HttpDelete("favorites/{id:long}")]
-    public async Task<IActionResult> RemoveFavorite(long id, [FromQuery] bool listing, CancellationToken ct)
+    public async Task<IActionResult> RemoveFavorite(long id, [FromQuery] bool product, CancellationToken ct)
     {
         var row = await _db.Favorites.FirstOrDefaultAsync(
-            f => f.UserId == _me.Id && (listing ? f.StoreListingId == id : f.ProductId == id), ct);
+            f => f.UserId == _me.Id && (product ? f.ProductId == id : f.StoreListingId == id), ct);
 
         if (row is not null)
         {
@@ -120,7 +127,7 @@ public class UserActivityController : ControllerBase
             await _db.SaveChangesAsync(ct);
         }
 
-        return Ok(new { favorited = false, id, listing });
+        return Ok(new { favorited = false, id, product });
     }
 
     // ── Store click-throughs ──────────────────────────────────────────────

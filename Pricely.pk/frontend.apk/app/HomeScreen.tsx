@@ -1,24 +1,20 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { BackHandler, View, Text, ScrollView, TextInput, TouchableOpacity, Animated, StyleSheet, Easing } from 'react-native';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { BackHandler, View, Text, ScrollView, TextInput, TouchableOpacity, Animated, StyleSheet, Easing, RefreshControl, FlatList, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { Flame } from 'lucide-react-native';
+import { Flame, Heart } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import LottieHamburger from '../components/LottieHamburger';
 import Sidebar from '../components/Sidebar';
-import CategoryCarousel from '../components/CategoryCarousel';
+import CategoryCarousel, { getValidProductImage } from '../components/CategoryCarousel';
 import { colors, radii, fonts, shadows } from '../theme/colors';
 import { useAuthStore } from '../context/AuthContext';
-import { useCategories, useTrendingSearches, useBestDrops } from '../hooks/useCatalog';
-import { dealImageUri, Category, Deal } from '../services/catalogService';
+import { useUserStore } from '../context/UserStore';
+import { useCategories, useTrendingSearches } from '../hooks/useCatalog';
+import { Category, getCategoryKeyFromLabel, getStoreBadgeStyle } from '../services/catalogService';
+import { fetchBrowseProducts, formatPrice, ApiProduct } from '../services/api';
 
-const DEALS_COLLAPSED_COUNT = 2;
-const DEALS_EXPANDED_COUNT = 4;
-
-// ---- Store partners ------------------------------------------------------
-// Logos load live from each store's own domain via a favicon/logo service
-// rather than bundling trademarked artwork. Falls back to a letter badge
-// automatically if a logo fails to load.
 interface Store {
   key: string;
   name: string;
@@ -31,6 +27,19 @@ const STORES: Store[] = [
   { key: 'megapk', name: 'Mega.pk', domain: 'mega.pk', fallbackColor: '#2F6FB0' },
   { key: 'telemart', name: 'Telemart', domain: 'telemart.pk', fallbackColor: '#1D9A7C' },
   { key: 'amazon', name: 'Amazon', domain: 'amazon.com', fallbackColor: '#B7791F' },
+];
+
+const ALL_CAT_KEYS = [
+  'mobiles_tablets',
+  'laptops_computers',
+  'tv_entertainment',
+  'home_appliances',
+  'kitchen_appliances',
+  'cameras',
+  'audio',
+  'wearables',
+  'gaming',
+  'accessories'
 ];
 
 const logoUri = (domain: string) => `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
@@ -63,13 +72,21 @@ function StoreLogo({ store }: { store: Store }) {
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuthStore();
+  const { toggleFavorite, isFavorited } = useUserStore();
   const { categories } = useCategories();
   const { trending } = useTrendingSearches();
-  const { deals } = useBestDrops();
 
   const [activeCategory, setActiveCategory] = useState('all');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [dealsExpanded, setDealsExpanded] = useState(false);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshSeed, setRefreshSeed] = useState(() => Math.floor(Math.random() * 1000000));
+
+  const [dropProducts, setDropProducts] = useState<any[]>([]);
+  const [dropPage, setDropPage] = useState(1);
+  const [dropLoading, setDropLoading] = useState(true);
+  const [dropLoadingMore, setDropLoadingMore] = useState(false);
+  const [dropHasMore, setDropHasMore] = useState(true);
 
   useEffect(() => {
     const onBackPress = () => {
@@ -83,77 +100,160 @@ export default function HomeScreen() {
     return () => subscription.remove();
   }, [menuOpen]);
 
-  // Dynamic — comes from whoever is actually signed in, never hardcoded.
   const firstName = user?.name?.trim().split(' ')[0] || 'there';
 
-  // Auto-scroll peek animation for category pills bar (runs on mount + repeats every 10s)
   const categoryScrollRef = useRef<ScrollView>(null);
-  const userInteractedRef = useRef(false);
-  const touchPauseTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const scrollOffsetRef = useRef(0);
+  const animIntervalRef = useRef<any>(null);
+  const resumeTimerRef = useRef<any>(null);
+  const isInteractingRef = useRef(false);
+
+  const startAutoScroll = useCallback(() => {
+    if (animIntervalRef.current) clearInterval(animIntervalRef.current);
+    animIntervalRef.current = setInterval(() => {
+      if (isInteractingRef.current) return;
+      scrollOffsetRef.current += 2.6;
+      if (scrollOffsetRef.current > 850) {
+        scrollOffsetRef.current = 0;
+      }
+      categoryScrollRef.current?.scrollTo({ x: scrollOffsetRef.current, animated: true });
+    }, 25);
+  }, []);
 
   const handleCategoryTouch = () => {
-    userInteractedRef.current = true;
-    if (touchPauseTimerRef.current) {
-      clearTimeout(touchPauseTimerRef.current);
+    isInteractingRef.current = true;
+    if (animIntervalRef.current) {
+      clearInterval(animIntervalRef.current);
+      animIntervalRef.current = null;
     }
-    // Pause for 10 seconds on user touch, then auto-resume
-    touchPauseTimerRef.current = setTimeout(() => {
-      userInteractedRef.current = false;
-    }, 10000);
+    if (resumeTimerRef.current) {
+      clearTimeout(resumeTimerRef.current);
+    }
+    resumeTimerRef.current = setTimeout(() => {
+      isInteractingRef.current = false;
+      startAutoScroll();
+    }, 3000);
   };
 
   useEffect(() => {
     if (!categories || categories.length === 0) return;
+    const startTimer = setTimeout(() => {
+      startAutoScroll();
+    }, 1000);
 
-    let animationFrameId: number;
+    return () => {
+      clearTimeout(startTimer);
+      if (animIntervalRef.current) clearInterval(animIntervalRef.current);
+      if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
+    };
+  }, [categories, startAutoScroll]);
 
-    const runPeekAnimation = () => {
-      if (userInteractedRef.current) return;
+  useEffect(() => {
+    let alive = true;
+    setDropLoading(true);
+    setDropPage(1);
+    setDropHasMore(true);
 
-      let scrollPos = 0;
-      const maxScroll = 340;
-      let forward = true;
+    Promise.all(
+      ALL_CAT_KEYS.map((catKey) => fetchBrowseProducts(catKey, undefined, refreshSeed, 1, 6))
+    )
+      .then((responses) => {
+        if (!alive) return;
+        const arrays = responses.map((r) => r?.results || []);
+        const interleaved: any[] = [];
+        const maxLen = Math.max(...arrays.map((a) => a.length), 0);
 
-      const animateScroll = () => {
-        if (userInteractedRef.current) return;
-
-        if (forward) {
-          scrollPos += 0.7;
-          if (scrollPos >= maxScroll) {
-            forward = false;
+        for (let i = 0; i < maxLen; i++) {
+          for (let j = 0; j < arrays.length; j++) {
+            const item = arrays[j][i];
+            if (item) {
+              interleaved.push({
+                id: item.id,
+                name: item.title,
+                price: formatPrice(item.price),
+                imageUrl: item.imageUrl || undefined,
+                handle: item.handle,
+                store: item.store || 'Pricely',
+                url: item.url,
+                categoryKey: ALL_CAT_KEYS[j],
+                hasComparison: item.hasComparison,
+                hasPriceDrop: item.hasPriceDrop,
+              });
+            }
           }
-        } else {
-          scrollPos -= 0.7;
-          if (scrollPos <= 0) {
-            scrollPos = 0;
-            categoryScrollRef.current?.scrollTo({ x: 0, animated: true });
-            return;
+        }
+        // Prioritize products available on multiple stores (hasComparison) and/or with price drops
+        interleaved.sort((a, b) => {
+          const scoreA = (a.hasComparison ? 2 : 0) + (a.hasPriceDrop ? 1 : 0);
+          const scoreB = (b.hasComparison ? 2 : 0) + (b.hasPriceDrop ? 1 : 0);
+          return scoreB - scoreA;
+        });
+        setDropProducts(interleaved);
+        setDropLoading(false);
+      })
+      .catch(() => {
+        if (alive) setDropLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [refreshSeed]);
+
+  const handleLoadMore = () => {
+    if (!dropHasMore || dropLoadingMore || dropLoading || refreshing) return;
+    setDropLoadingMore(true);
+    const nextPage = dropPage + 1;
+
+    Promise.all(
+      ALL_CAT_KEYS.map((catKey) => fetchBrowseProducts(catKey, undefined, refreshSeed, nextPage, 6))
+    )
+      .then((responses) => {
+        const arrays = responses.map((r) => r?.results || []);
+        const interleaved: any[] = [];
+        const maxLen = Math.max(...arrays.map((a) => a.length), 0);
+
+        for (let i = 0; i < maxLen; i++) {
+          for (let j = 0; j < arrays.length; j++) {
+            const item = arrays[j][i];
+            if (item) {
+              interleaved.push({
+                id: item.id,
+                name: item.title,
+                price: formatPrice(item.price),
+                imageUrl: item.imageUrl || undefined,
+                handle: item.handle,
+                store: item.store || 'Pricely',
+                url: item.url,
+                categoryKey: ALL_CAT_KEYS[j],
+                hasComparison: item.hasComparison,
+              });
+            }
           }
         }
 
-        categoryScrollRef.current?.scrollTo({ x: scrollPos, animated: false });
-        animationFrameId = requestAnimationFrame(animateScroll);
-      };
+        if (interleaved.length > 0) {
+          setDropProducts((prev) => {
+            const existing = new Set(prev.map((p) => `${p.id || p.handle || p.name}`));
+            const uniqueNew = interleaved.filter((p) => !existing.has(`${p.id || p.handle || p.name}`));
+            return [...prev, ...uniqueNew];
+          });
+          setDropPage(nextPage);
+        } else {
+          setDropHasMore(false);
+        }
+      })
+      .catch(() => setDropHasMore(false))
+      .finally(() => setDropLoadingMore(false));
+  };
 
-      animationFrameId = requestAnimationFrame(animateScroll);
-    };
-
-    // Run after 1 second initially
-    const initialTimer = setTimeout(runPeekAnimation, 1000);
-
-    // Repeat every 10 seconds
-    const intervalId = setInterval(runPeekAnimation, 10000);
-
-    return () => {
-      clearTimeout(initialTimer);
-      clearInterval(intervalId);
-      if (touchPauseTimerRef.current) clearTimeout(touchPauseTimerRef.current);
-      if (animationFrameId) cancelAnimationFrame(animationFrameId);
-    };
-  }, [categories]);
-
-  const dealsCount = dealsExpanded ? DEALS_EXPANDED_COUNT : DEALS_COLLAPSED_COUNT;
-  const visibleDeals = deals.slice(0, dealsCount);
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setRefreshSeed(Math.floor(Math.random() * 1000000));
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 600);
+  }, []);
 
   const goToCategory = (key: string) => {
     if (key !== 'all') {
@@ -166,153 +266,199 @@ export default function HomeScreen() {
   return (
     <>
       <SafeAreaView style={styles.root} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Header */}
-          <View style={styles.headerRow}>
-            <View>
-              <Text style={styles.greeting}>Assalam-o-Alaikum</Text>
-              <Text style={styles.name}>{firstName}</Text>
-            </View>
+        <FlatList
+          key={refreshSeed}
+          data={dropProducts}
+          numColumns={2}
+          keyExtractor={(item: any, idx: number) => `${item.id || item.handle || idx}-${idx}`}
+          style={styles.content}
+          columnWrapperStyle={{ justifyContent: 'space-between', marginBottom: 12 }}
+          showsVerticalScrollIndicator={false}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.accentSolid}
+              colors={[colors.accentSolid]}
+            />
+          }
+          ListHeaderComponent={
+            <>
+              <View style={styles.headerRow}>
+                <View>
+                  <Text style={styles.greeting}>Assalam-o-Alaikum</Text>
+                  <Text style={styles.name}>{firstName}</Text>
+                </View>
 
-            <TouchableOpacity style={styles.menuButton} activeOpacity={0.8} onPress={() => setMenuOpen((o) => !o)}>
-              <LottieHamburger isOpen={menuOpen} size={22} />
-            </TouchableOpacity>
-          </View>
+                <TouchableOpacity style={styles.menuButton} activeOpacity={0.8} onPress={() => setMenuOpen((o) => !o)}>
+                  <LottieHamburger isOpen={menuOpen} size={22} />
+                </TouchableOpacity>
+              </View>
 
-          {/* Category image carousel — replaces the old search card. Same
-              search field as before, now living inside the carousel's
-              pinned top panel; images/theming below match the app.
-              Tapping "Explore" on any card navigates to CategoryScreen. */}
-          <CategoryCarousel
-            categories={categories.filter((c) => c.key !== 'all')}
-            storeCount={STORES.length}
-            onExplore={(key: string) => navigation.navigate('Category', { categoryKey: key })}
-            onSearchSubmit={(query: string) => {
-              navigation.navigate('Search', { query });
-            }}
-          />
-
-          {/* Shop by store — moved above categories */}
-          <Text style={styles.sectionTitle}>Shop by store</Text>
-          <View style={styles.storeRow}>
-            {STORES.map((store) => (
-              <TouchableOpacity
-                key={store.key}
-                style={styles.storeItem}
-                activeOpacity={0.8}
-                onPress={() => {
-                  if (store.key === 'telemart') {
-                    navigation.navigate('Category', { categoryKey: 'mobiles_tablets', storeFilter: 'Telemart' });
-                  } else if (store.key === 'megapk') {
-                    navigation.navigate('Category', { categoryKey: 'mobiles_tablets', storeFilter: 'Mega.pk' });
-                  } else if (store.key === 'daraz') {
-                    navigation.navigate('Category', { categoryKey: 'mobiles_tablets', storeFilter: 'Daraz' });
-                  } else {
-                    navigation.navigate('Search', { storeFilter: store.name });
-                  }
+              <CategoryCarousel
+                categories={categories.filter((c) => c.key !== 'all')}
+                storeCount={STORES.length}
+                onExplore={(key: string) => navigation.navigate('Category', { categoryKey: key })}
+                onSearchSubmit={(query: string) => {
+                  navigation.navigate('Search', { query });
                 }}
+              />
+
+              <Text style={styles.sectionTitle}>Shop by store</Text>
+              <View style={styles.storeRow}>
+                {STORES.map((store) => (
+                  <TouchableOpacity
+                    key={store.key}
+                    style={styles.storeItem}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      if (store.key === 'telemart') {
+                        navigation.navigate('Category', { categoryKey: 'mobiles_tablets', storeFilter: 'Telemart' });
+                      } else if (store.key === 'megapk') {
+                        navigation.navigate('Category', { categoryKey: 'mobiles_tablets', storeFilter: 'Mega.pk' });
+                      } else if (store.key === 'daraz') {
+                        navigation.navigate('Category', { categoryKey: 'mobiles_tablets', storeFilter: 'Daraz' });
+                      } else {
+                        navigation.navigate('Search', { storeFilter: store.name });
+                      }
+                    }}
+                  >
+                    <StoreLogo store={store} />
+                    <Text style={styles.storeName}>{store.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.sectionTitle}>Categories</Text>
+
+              <ScrollView
+                ref={categoryScrollRef}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.categoryScroll}
+                onScrollBeginDrag={handleCategoryTouch}
+                onTouchStart={handleCategoryTouch}
               >
-                <StoreLogo store={store} />
-                <Text style={styles.storeName}>{store.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+                {categories.map((cat: Category, idx: number) => {
+                  const active = cat.key === activeCategory;
+                  return (
+                    <TouchableOpacity
+                      key={`${cat.key || idx}-${idx}`}
+                      style={[styles.categoryPill, active && styles.categoryPillActive]}
+                      onPress={() => goToCategory(cat.key)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.categoryLabel, active && styles.categoryLabelActive]}>{cat.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
 
-          {/* Categories section title */}
-          <Text style={styles.sectionTitle}>Categories</Text>
+              <Text style={styles.sectionTitle}>Trending Searches</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.trendingScroll}>
+                <View style={styles.trendingGrid}>
+                  {trending.map((t: any, idx: number) => {
+                    const termStr = typeof t === 'string' ? t : t.term || `trending-${idx}`;
+                    const countVal = typeof t === 'object' && t.count ? t.count : null;
+                    return (
+                      <TouchableOpacity
+                        key={`${termStr}-${idx}`}
+                        style={styles.trendingChip}
+                        activeOpacity={0.8}
+                        onPress={() => navigation.navigate('Search', { query: termStr })}
+                      >
+                        <Flame size={13} color={colors.accentSolid} style={{ marginRight: 4 }} />
+                        <Text style={styles.categoryLabel}>{termStr}</Text>
+                        {countVal !== null && <Text style={styles.trendingCount}>({countVal})</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
 
-          {/* Category pills — animated auto-scrolling row displaying all categories. */}
-          <ScrollView
-            ref={categoryScrollRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.categoryScroll}
-            onScrollBeginDrag={handleCategoryTouch}
-            onTouchStart={handleCategoryTouch}
-          >
-            {categories.map((cat: Category) => {
-              const active = cat.key === activeCategory;
-              return (
-                <TouchableOpacity
-                  key={cat.key}
-                  style={[styles.categoryPill, active && styles.categoryPillActive]}
-                  onPress={() => goToCategory(cat.key)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={[styles.categoryLabel, active && styles.categoryLabelActive]}>{cat.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+              <View style={{ marginBottom: 12, marginTop: 10 }}>
+                <Text style={styles.sectionTitle}>Today's best drops</Text>
+              </View>
+            </>
+          }
+          ListFooterComponent={
+            dropLoadingMore ? (
+              <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={colors.accentSolid} />
+              </View>
+            ) : null
+          }
+          renderItem={({ item: deal, index: idx }: { item: any; index: number }) => {
+            const imgUri = getValidProductImage(deal.imageUrl, deal.categoryKey, deal.name);
+            const favorited = isFavorited(deal.name);
 
-          {/* Trending searches — 2 rows, scrolls sideways. flexDirection
-              'column' + flexWrap inside a fixed-height horizontal
-              ScrollView is what makes RN wrap items into a second row
-              instead of a single long line. */}
-          <Text style={styles.trendingSectionTitle}>Trending searches</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.trendingScroll}>
-            <View style={styles.trendingGrid}>
-              {trending.map((term: string) => (
-                <TouchableOpacity
-                  key={term}
-                  style={styles.trendingChip}
-                  activeOpacity={0.8}
-                  onPress={() => navigation.navigate('Search', { query: term })}
-                >
-                  <Flame size={14} color={colors.adminAccent} />
-                  <Text style={styles.trendingLabel}>{term}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-
-          {/* Today's best drops */}
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Today's best drops</Text>
-            {deals.length > DEALS_COLLAPSED_COUNT && (
-              <TouchableOpacity onPress={() => setDealsExpanded((e) => !e)}>
-                <Text style={styles.seeAll}>{dealsExpanded ? 'See less' : 'See more'}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <View style={styles.dealsGrid}>
-            {visibleDeals.map((deal: Deal) => (
+            return (
               <TouchableOpacity
-                key={deal.id}
-                style={styles.dealCard}
-                activeOpacity={0.85}
+                key={`${deal.id || deal.handle || idx}-${idx}`}
+                style={styles.dealCardGrid}
+                activeOpacity={0.88}
                 onPress={() =>
                   navigation.navigate('ProductDetail', {
-                    id: deal.idNum,
+                    id: deal.id,
                     handle: deal.handle,
                     productName: deal.name,
                     currentPrice: deal.price,
-                    imageUrl: deal.imageUrl,
+                    imageUrl: imgUri,
                     store: deal.store,
+                    categoryKey: deal.categoryKey,
+                    url: deal.url,
                   })
                 }
               >
-                <Image
-                  source={{ uri: deal.imageUrl || dealImageUri(deal.imageSeed) }}
-                  style={styles.dealImage}
-                  contentFit="contain"
-                  transition={200}
-                  cachePolicy="memory-disk"
-                />
-                <Text style={styles.dealName} numberOfLines={1}>
+                <View style={styles.dealImageWrap}>
+                  <Image
+                    source={{ uri: imgUri }}
+                    style={styles.dealImage}
+                    contentFit="cover"
+                    transition={200}
+                    cachePolicy="memory-disk"
+                  />
+                  <TouchableOpacity
+                    style={styles.favFloatBtn}
+                    activeOpacity={0.85}
+                    onPress={() =>
+                      toggleFavorite({
+                        name: deal.name,
+                        price: deal.price,
+                        imageUrl: imgUri,
+                        categoryKey: deal.categoryKey,
+                        store: deal.store,
+                        handle: deal.handle,
+                      })
+                    }
+                  >
+                    <Ionicons
+                      name={favorited ? 'heart' : 'heart-outline'}
+                      size={18}
+                      color={favorited ? '#E74C3C' : '#64748B'}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.dealName} numberOfLines={2}>
                   {deal.name}
                 </Text>
                 <Text style={styles.dealPrice}>{deal.price}</Text>
-                <View style={styles.discountBadge}>
-                  <Text style={styles.discountText}>
-                    ▼ {deal.discount} · {deal.store}
-                  </Text>
-                </View>
+
+                {(() => {
+                  const storeMeta = getStoreBadgeStyle(deal.store);
+                  return (
+                    <View style={[styles.storeTagPill, { backgroundColor: storeMeta.bg, borderColor: storeMeta.border, borderWidth: 1 }]}>
+                      <Text style={[styles.storeTagText, { color: storeMeta.color, fontFamily: fonts.button }]}>{deal.store || 'Pricely'}</Text>
+                    </View>
+                  );
+                })()}
               </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
+            );
+          }}
+        />
       </SafeAreaView>
 
       <Sidebar
@@ -326,8 +472,9 @@ export default function HomeScreen() {
           else if (dest === 'Profile' || dest === 'Account') navigation.navigate('Account');
           else if (dest === 'Settings') navigation.navigate('Settings');
           else if (dest === 'Help & Support' || dest === 'HelpSupport' || dest === 'Help') navigation.navigate('HelpSupport');
-          else if (['Electronics', 'Fashion', 'Home & Living', 'Beauty', 'Appliances', 'Mobiles', 'Categories'].includes(dest)) {
-            navigation.navigate('Category', { categoryKey: 'mobiles_tablets' });
+          else {
+            const catKey = getCategoryKeyFromLabel(dest);
+            navigation.navigate('Category', { categoryKey: catKey });
           }
         }}
         onLogout={async () => {
@@ -405,9 +552,56 @@ const styles = StyleSheet.create({
     marginRight: 8,
     marginBottom: 8,
   },
+  trendingCount: {
+    fontSize: 11,
+    fontFamily: fonts.button,
+    color: colors.accentSolid,
+  },
   trendingLabel: { fontSize: 12, fontFamily: fonts.label, color: colors.textPrimary },
 
   dealsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
+  dealCardGrid: {
+    width: '48%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: radii.medium,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 10,
+    ...shadows.card,
+  },
+  dealImageWrap: {
+    width: '100%',
+    height: 110,
+    borderRadius: radii.small,
+    overflow: 'hidden',
+    backgroundColor: '#F8FAFC',
+    marginBottom: 8,
+  },
+  favFloatBtn: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.card,
+  },
+  storeTagPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EAF4EF',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginTop: 4,
+  },
+  storeTagText: {
+    fontSize: 10,
+    fontFamily: fonts.button,
+    color: '#1D9A7C',
+  },
   dealCard: {
     width: '47%',
     backgroundColor: colors.surface,
@@ -417,7 +611,7 @@ const styles = StyleSheet.create({
     padding: 8,
     ...shadows.card,
   },
-  dealImage: { width: '100%', height: 78, borderRadius: radii.small, backgroundColor: colors.accentTint, marginBottom: 8 },
+  dealImage: { width: '100%', height: '100%' },
   dealName: { fontSize: 12, fontFamily: fonts.body, color: colors.textSecondary, marginBottom: 3 },
   dealPrice: { fontSize: 15, fontFamily: fonts.monoEmphasis, color: colors.textPrimary, marginBottom: 6 },
   discountBadge: { alignSelf: 'flex-start', backgroundColor: colors.accentMango, borderRadius: radii.small, paddingHorizontal: 7, paddingVertical: 3 },

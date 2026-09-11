@@ -95,9 +95,13 @@ public class DarazSyncService : IStoreConnector
             // individually meant ~9,000 round trips to a cloud database, which
             // is where the time went — the same change took Telemart from 47
             // minutes to 6 seconds.
-            var existingByUrl = await db.StoreListings
-                .Where(l => l.StoreId == daraz.Id && l.ProductUrl != null)
-                .ToDictionaryAsync(l => l.ProductUrl!);
+            var existingByUrl = (await db.StoreListings
+                    .Where(l => l.StoreId == daraz.Id && l.ProductUrl != null)
+                    .ToListAsync())
+                // Daraz lists the same URL under more than one category, and
+                // ToDictionary throws on the duplicate, taking the sync with it.
+                .GroupBy(l => l.ProductUrl!)
+                .ToDictionary(g => g.Key, g => g.First());
 
             var http = _httpFactory.CreateClient();
             http.DefaultRequestHeaders.Add("User-Agent",
